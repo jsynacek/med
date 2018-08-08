@@ -8,11 +8,6 @@ import (
 var TAB = []byte("\t")
 var NL  = []byte("\n")
 
-type Anchor struct {
-	// Line start, offset, line end (including newline).
-	ls, off, le int
-}
-
 func min(x, y int) int {
 	if x < y {
 		return x
@@ -62,11 +57,6 @@ func lineStart(text []byte, off int) int {
 	}
 	i := bytes.LastIndex(text[:off], NL)
 	return i + 1
-}
-
-func lineAnchor(text []byte, off int) Anchor {
-	le := min(len(text), lineEnd(text, off)+1)
-	return Anchor{lineStart(text, off), off, le}
 }
 
 func lineIndent(text []byte, off int) (ls int, i int) {

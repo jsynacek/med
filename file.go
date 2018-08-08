@@ -7,19 +7,7 @@ import (
 	"os"
 	"unicode"
 	"unicode/utf8"
-	"jsynacek/term"
 )
-
-type View struct {
-	off    int
-	top    int
-	width  int
-	height int
-}
-
-func DefaultView() View {
-	return View{0, 0, term.Cols(), term.Rows()-3}
-}
 
 // Undo record.
 //
@@ -64,7 +52,7 @@ func NewFile(name, path string, text []byte) (file *File) {
 	file = &File{
 		name: name,
 		path: path,
-		view: DefaultView(),
+		view: NewView(false),
 		undos: list.New(),
 		redos: list.New(),
 		text: text,
@@ -85,7 +73,7 @@ func LoadFile(path string) (*File, error) {
 		name: path,
 		path: path,
 		modified: false,
-		view: DefaultView(),
+		view: NewView(false),
 		undos: list.New(),
 		redos: list.New(),
 		text: text,
@@ -193,9 +181,8 @@ func (file *File) insert(what []byte) {
 		file.mark.col = file.mark.Column(file.text, file.tabStop)
 	}
 	// Fix the view, as the edit could have potentially been done in front of it.
-	if file.point.off < file.view.off {
-		file.view.off += l
-		file.view.top += nl
+	if file.point.off < file.view.start {
+		file.view.start += l
 	}
 	file.point.off += l
 	file.point.line += nl
@@ -241,12 +228,10 @@ func (file *File) delete(start, end int) (what []byte) {
 		file.mark.col = file.mark.Column(file.text, file.tabStop)
 	}
 	// Fix the view, as the edit could have potentially been done in front of it.
-	if file.view.off >= start && file.view.off < end {
-		file.view.top -= bytes.Count(what[:min(end-start, file.view.off)], NL)
-		file.view.off = start
-	} else if file.view.off > end {
-		file.view.off -= len(what)
-		file.view.top -= bytes.Count(what, NL)
+	if file.view.start >= start && file.view.start < end {
+		file.view.start = start
+	} else if file.view.start > end {
+		file.view.start -= len(what)
 	}
 	file.modified = true
 	return

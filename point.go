@@ -6,15 +6,9 @@ import (
 )
 
 type Point struct {
-	// Potentially, int is limiting in the max buffer size the point can navigate.
-	// Practically, I don't care. Yet...
 	off  int // Offset into text in bytes.
 	col  int // Last horizontal offset in runes. Used when moving up and down to keep column.
 	line int // Current line number.
-}
-
-func (p *Point) Anchor(text []byte) Anchor {
-	return lineAnchor(text, p.off)
 }
 
 // Column gets called very often (movement functions for keeping visual column;

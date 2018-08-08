@@ -1,5 +1,10 @@
 package main
 
+import (
+	"go/scanner"
+	"go/token"
+)
+
 // Go 1.10 standard library.
 // When I grow up, I am going to make a proper tool that scans the docs on the fly.
 var goPackages = []string{
@@ -29,4 +34,38 @@ var goPackages = []string{
 	"sync/atomic", "syscall", "testing", "testing/iotest", "testing/quick", "text",
 	"text/scanner", "text/tabwriter", "text/template", "text/template/parse", "time",
 	"unicode", "unicode/utf16", "unicode/utf8", "unsafe",
+}
+
+func getSyntax(text []byte, off int, maxLines int) (res []Highlight) {
+	var s scanner.Scanner
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(text)-off)
+	s.Init(file, text[off:], nil, scanner.ScanComments)
+	l := 0
+	for l < maxLines {
+		pos, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
+		} else if tok == token.SEMICOLON && lit[0] == '\n' {
+			l++
+		}
+		start := off + int(pos) - 1
+		end := start + len(lit)
+		switch tok {
+		case token.COMMENT:
+			res = append(res, Highlight{start, end, theme["comment"]})
+		// Keywords.
+		case token.BREAK, token.CASE, token.CHAN, token.CONST, token.CONTINUE, token.DEFAULT,
+			token.DEFER, token.ELSE, token.FALLTHROUGH, token.FOR, token.FUNC, token.GO,
+			token.GOTO, token.IF, token.IMPORT, token.INTERFACE, token.MAP, token.PACKAGE,
+			token.RANGE, token.RETURN, token.SELECT, token.STRUCT, token.SWITCH,
+			token.TYPE, token.VAR:
+			res = append(res, Highlight{start, end, theme["keyword"]})
+		case token.STRING:
+			res = append(res, Highlight{start, end, theme["string"]})
+		case token.CHAR:
+			res = append(res, Highlight{start, end, theme["char"]})
+		}
+	}
+	return
 }

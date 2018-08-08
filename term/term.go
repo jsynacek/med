@@ -5,6 +5,7 @@
 package term
 
 import (
+	"image/color"
 	"fmt"
 	"bufio"
 	"os"
@@ -44,6 +45,20 @@ int term_restore() {
 */
 import "C"
 
+// Aditional to those listed in the const below, the following escape sequences are used:
+//
+// \033[ ? 1049 h - Save cursor and use alternate buffer.
+// \033[ ? 1049 l - Restore cursor and use normal screen buffer.
+// \033[ ? 25 l   - Hide cursor.
+// \033[ ? 25 h   - Show cursor.
+// \033[ y ; x f  - Move cursor to y, x.
+// \033[ 0 K      - Erase from cursor to the end of line.
+// \033[ 1 J      - Erase display from cursor.
+// \033[ 38 ; 2 ; r ; g ; b m  - Set foreground color to rgb.
+// \033[ 48 ; 2 ; r ; g ; b m  - Set background color to rgb.
+//
+// Some of them are documented in man console_codes(4), others are described at
+// http://invisible-island.net/xterm/ctlseqs/ctlseqs.txt.
 const (
        FgBlack = "\033[30m"
        FgRed = "\033[31m"
@@ -61,6 +76,7 @@ const (
        BgMagenta = "\033[45m"
        BgCyan = "\033[46m"
        BgWhite = "\033[47m"
+       AttrReverse = "\033[7m"
        ColorReset = "\033[0m"
 
 )
@@ -106,7 +122,6 @@ func Restore() error {
 	return nil
 }
 
-// TODO: Rewrite: New() + Init(clear bool) (init dela New() + clear)
 func NewTerm() *Term {
 	t := new(Term)
 	//Hold enough for a really large terminal and a lot of escape sequences.
@@ -116,24 +131,35 @@ func NewTerm() *Term {
 	return t
 }
 
+func (t *Term) Init() {
+	t.Write([]byte("\033[?1049h\033[?25l"))
+	t.Flush()
+}
+
+func (t *Term) Finish() {
+	t.Write([]byte("\033[0m\033[?25h\033[?1049l"))
+	t.Flush()
+	Restore()
+}
+
 func (t *Term) MoveTo(row int, col int) {
 	t.Write([]byte(fmt.Sprintf("\033[%d;%df", row+1, col+1)))
 }
 
-func (t *Term) AttrReverse() {
-	t.Write([]byte("\033[7m"))
+func (t *Term) AttrFgRGB(c *color.RGBA) {
+	t.Write([]byte(fmt.Sprintf("\033[38;2;%d;%d;%dm", c.R, c.G, c.B)))
 }
 
-func (t *Term) AttrError() {
-	t.Write([]byte(BgRed))
-}
-
-func (t *Term) AttrPoint() {
-	t.Write([]byte(BgBlue))
+func (t *Term) AttrBgRGB(c *color.RGBA) {
+	t.Write([]byte(fmt.Sprintf("\033[48;2;%d;%d;%dm", c.R, c.G, c.B)))
 }
 
 func (t *Term) AttrReset() {
 	t.Write([]byte(ColorReset))
+}
+
+func (t *Term) EraseEol() {
+	t.Write([]byte("\033[0K"))
 }
 
 func (t *Term) EraseDisplay() {
@@ -148,13 +174,3 @@ func (t *Term) Write(bs []byte) {
 func (t *Term) Flush() {
 	t.writer.Flush()
 }
-
-/*
- *func (t *Term) SaveCursor() {
- *        t.Write([]byte("\033[s"))
- *}
- *
- *func (t *Term) RestoreCursor() {
- *        t.Write([]byte("\033[u"))
- *}
- */
