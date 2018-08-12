@@ -166,6 +166,12 @@ var commandModeKeymap = joinKeybinds(
 		{" s", saveFile},
 		{"`", switchVisuals},
 		{"~", switchSyntax},
+		{"zi", pointToViewTop},
+		{"zj", pointToViewMiddle},
+		{"zk", pointToViewBottom},
+		{"zI", viewToPointTop},
+		{"zJ", viewToPointMiddle},
+		{"zK", viewToPointBottom},
 	},
 )
 
@@ -307,11 +313,13 @@ func pointLineStart(med *Med) {
 }
 func pageDown(med *Med) {
 	file := med.file.Value.(*File)
-	file.PageDown()
+	file.view.PageDown(file.text)
+	pointToViewTop(med)
 }
 func pageUp(med *Med) {
 	file := med.file.Value.(*File)
-	file.PageUp()
+	file.view.PageUp(file.text)
+	pointToViewTop(med)
 }
 func pointTextStart(med *Med) {
 	file := med.file.Value.(*File)
@@ -515,6 +523,39 @@ func switchVisuals(med *Med) {
 func switchSyntax(med *Med) {
 	showSyntax = !showSyntax
 }
+
+func (med *Med) pointToView(down int) {
+	file := med.file.Value.(*File)
+	p := file.view.start
+	for i := 0; i < down; i++ {
+		_, p = visualLineEnd(file.text, p, file.view.visual.tabStop, file.view.width)
+	}
+	file.Goto(p)
+}
+func pointToViewTop(med *Med) {
+	med.pointToView(0)
+}
+func pointToViewMiddle(med *Med) {
+	file := med.file.Value.(*File)
+	med.pointToView(file.view.height/2)
+}
+func pointToViewBottom(med *Med) {
+	file := med.file.Value.(*File)
+	med.pointToView(file.view.height-1)
+}
+func viewToPointTop(med *Med) {
+	file := med.file.Value.(*File)
+	file.view.ToPoint(file.text, file.point.off, 0)
+}
+func viewToPointMiddle(med *Med) {
+	file := med.file.Value.(*File)
+	file.view.ToPoint(file.text, file.point.off, file.view.height/2)
+}
+func viewToPointBottom(med *Med) {
+	file := med.file.Value.(*File)
+	file.view.ToPoint(file.text, file.point.off, file.view.height-1)
+}
+
 func commandMode(med *Med) {
 	med.mode = CommandMode
 }
@@ -979,7 +1020,7 @@ func main() {
 			selections = append(selections, Highlight{ss, se, theme["selection"]})
 		}
 
-		file.view.ToPoint(file.text, file.point.off)
+		file.view.AdjustToPoint(file.text, file.point.off)
 		if showSyntax {
 			highlights = getSyntax(file.text, file.view.start, file.view.height)
 		}

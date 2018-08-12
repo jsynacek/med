@@ -40,6 +40,50 @@ func expandTabs(line []byte, tabStop int) []byte {
 	return res
 }
 
+func visualLineEnd(text []byte, off int, tabStop int, width int) (end, next int) {
+	for p, col := lineStart(text, off), 0 ; p < len(text); {
+		r, s := utf8.DecodeRune(text[p:])
+		if r == '\t' {
+			col += tabStop - col % tabStop
+		} else {
+			col++
+		}
+		if col >= width {
+			if p > off {
+				return p, p+s
+			}
+			col = 0
+		} else if r == '\n' {
+			return p, p+1
+		}
+		p += s
+	}
+	return len(text), len(text)
+}
+
+func visualLineStart(text []byte, off int, tabStop int, width int) (start, prev int) {
+	start = lineStart(text, off)
+	prev = max(0, start-1)
+	for p, col := lineStart(text, off), 0 ; p < off && p < len(text); {
+		r, s := utf8.DecodeRune(text[p:])
+		if r == '\t' {
+			col += tabStop - col % tabStop
+		} else {
+			col++
+		}
+		switch {
+		case col >= width:
+			start, prev = p+s, p
+			col = 0
+		case r == '\n':
+			start, prev = p+1, p
+		}
+		p += s
+	}
+	return
+}
+
+
 func lineEnd(text []byte, off int) int {
 	if off >= len(text) {
 		return len(text)

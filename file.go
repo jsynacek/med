@@ -84,20 +84,6 @@ func SaveFile(path string, data []byte) error {
 	return ioutil.WriteFile(path, data, 0644)
 }
 
-func (file *File) PageDown() {
-	for n := file.view.height/2; n > 0; n-- {
-		// TODO Options.
-		file.point.Down(file.text, file.tabStop, true)
-	}
-}
-
-func (file *File) PageUp() {
-	for n := file.view.height/2; n > 0; n-- {
-		// TODO Options.
-		file.point.Up(file.text, file.tabStop, true)
-	}
-}
-
 func (file *File) Goto(off int) {
 	file.point.Goto(file.text, off, file.tabStop)
 }

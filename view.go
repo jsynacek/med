@@ -19,7 +19,6 @@ type View struct {
 	width  int
 	height int
 	visual Visual
-	stay   bool
 	end    int // Set after scan.
 }
 
@@ -61,44 +60,11 @@ func (view *View) lineEnd(text []byte, off int) int {
 }
 
 // Adjust view so the point is visible. Assumes view.end is set correctly.
-func (view *View) ToPoint(text []byte, point int) {
-	// This condition is true every time point stays at the end of text after a command.
-	// That's why view.stay is needed, so view doesn't scroll when there's no need.
+func (view *View) AdjustToPoint(text []byte, point int) {
 	if point >= view.end {
-		if view.stay {
-			return
-		}
-		p := view.end
-		col := 0
-		l := 1
-
-		// TODO: Add heuristic: When view.end-point > 1000 (or some other max distance),
-		// count backwards... That will make the algorithm move about view.height lines at worst.
-		// Count how many visual lines to move view.start forward.
-		for p < point {
-			r, s := utf8.DecodeRune(text[p:])
-			if r == '\t' {
-				col += view.visual.tabStop - (col % view.visual.tabStop)
-			} else {
-				col++
-			}
-			if r == '\n' || col >= view.width {
-				col = 0
-				l++
-			}
-			p += s
-		}
-		// Move view.start accordingly.
-		for ; l > 0; l-- {
-			view.start = view.lineEnd(text, view.start)
-		}
-		// Lock view so it doesn't move and when it's at the end of the file.
-		if view.end == len(text) || point == len(text) {
-			view.stay = true
-		}
+		view.ToPoint(text, point, view.height-1)
 	} else if point < view.start {
-		view.start = lineStart(text, point)
-		view.stay = false
+		view.ToPoint(text, point, 0)
 	}
 }
 
@@ -262,5 +228,32 @@ func (view *View) DisplayText(t *term.Term, text []byte, point int, selections [
 			t.MoveTo(l, 0)
 			t.Write([]byte(string(view.visual.eofChar)))
 		}
+	}
+}
+
+func (view *View) ScrollDown(text []byte) {
+	_, view.start = visualLineEnd(text, view.start, view.visual.tabStop, view.width)
+}
+
+func (view *View) ScrollUp(text []byte) {
+	view.start, _ = visualLineStart(text, view.start-1, view.visual.tabStop, view.width)
+}
+
+func (view *View) PageDown(text []byte) {
+	for i := 0; i < view.height-3; i++ {
+		view.ScrollDown(text)
+	}
+}
+
+func (view *View) PageUp(text []byte) {
+	for i := 0; i < view.height-3; i++ {
+		view.ScrollUp(text)
+	}
+}
+
+func (view *View) ToPoint(text []byte, point int, up int) {
+	view.start, _ = visualLineStart(text, point, view.visual.tabStop, view.width)
+	for i := 0; i < up; i++ {
+		view.ScrollUp(text)
 	}
 }
