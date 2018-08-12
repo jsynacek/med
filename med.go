@@ -176,7 +176,7 @@ var commandModeKeymap = joinKeybinds(
 )
 
 var editingModeKeymap = joinKeybinds(
-	Keybind{kEsc, func(*Med){}},
+	Keybind{kEsc, func(*Med, *File){}},
 	commonMovementKeymap,
 	[]Keybind {
 		{kAlt(" "), commandMode},
@@ -187,7 +187,7 @@ var editingModeKeymap = joinKeybinds(
 )
 
 var selectionModeKeymap = joinKeybinds(
-	Keybind{kEsc, func(*Med){}},
+	Keybind{kEsc, func(*Med, *File){}},
 	movementKeymap,
 	[]Keybind{
 		{kAlt(" "), commandMode},
@@ -204,7 +204,7 @@ var selectionModeKeymap = joinKeybinds(
 )
 
 var dialogModeKeymap = []Keybind {
-	{kEsc, func(*Med){}},
+	{kEsc, func(*Med, *File){}},
 	{kAlt(" "), dialogCancel},
 	{kRight, dialogPointRight},
 	{kLeft, dialogPointLeft},
@@ -269,81 +269,70 @@ func (med *Med) startDialog(prompt string, update updateFunc, finish finishFunc,
 
 //// Command wrappers with extra functionality.
 
-func wMoveSelection(fn func(*Med)) func(*Med) {
-	return func(med *Med) {
-		fn(med)
+func wMoveSelection(fn func(*Med, *File)) func(*Med, *File) {
+	return func(med *Med, file *File) {
+		fn(med, file)
 		if med.mode == SelectionMode {
-			med.selectionUpdate()
+			med.selectionUpdate(file)
 		}
 	}
 }
 
-func wDialogUpdate (fn func(*Med)) func(*Med) {
-	return func(med *Med) {
-		fn(med)
+func wDialogUpdate (fn func(*Med, *File)) func(*Med, *File) {
+	return func(med *Med, file *File) {
+		fn(med, file)
 		med.dialog.update()
 	}
 }
 
 //// Command mode commands.
 
-func pointRight(med *Med) {
-	file := med.file.Value.(*File)
+func pointRight(med *Med, file *File) {
 	file.point.Right(file.text, tabStop)
 }
-func pointLeft(med *Med) {
-	file := med.file.Value.(*File)
+func pointLeft(med *Med, file *File) {
 	file.point.Left(file.text, tabStop)
 }
-func pointDown(med *Med) {
-	file := med.file.Value.(*File)
+func pointDown(med *Med, file *File) {
 	file.point.Down(file.text, tabStop, keepVisualColumn)
 }
-func pointUp(med *Med) {
-	file := med.file.Value.(*File)
+func pointUp(med *Med, file *File) {
 	file.point.Up(file.text, tabStop, keepVisualColumn)
 }
-func pointLineEnd(med *Med) {
-	file := med.file.Value.(*File)
+func pointLineEnd(med *Med, file *File) {
 	file.point.LineEnd(file.text, tabStop)
 }
-func pointLineStart(med *Med) {
-	file := med.file.Value.(*File)
+func pointLineStart(med *Med, file *File) {
 	file.point.LineStart(file.text, smartLineStart)
 }
-func pageDown(med *Med) {
-	file := med.file.Value.(*File)
+func pageDown(med *Med, file *File) {
 	file.view.PageDown(file.text)
-	pointToViewTop(med)
+	pointToViewTop(med, file)
 }
-func pageUp(med *Med) {
-	file := med.file.Value.(*File)
+func pageUp(med *Med, file *File) {
 	file.view.PageUp(file.text)
-	pointToViewTop(med)
+	pointToViewTop(med, file)
 }
-func pointTextStart(med *Med) {
-	file := med.file.Value.(*File)
+func pointTextStart(med *Med, file *File) {
 	file.point.TextStart(file.text)
 }
-func pointTextEnd(med *Med) {
-	file := med.file.Value.(*File)
+func pointTextEnd(med *Med, file *File) {
 	file.point.TextEnd(file.text, tabStop)
 }
-func searchForward(med *Med) {
-	med.search(true)
+func searchForward(med *Med, file *File) {
+	med.search(file, true)
 }
-func searchBackward(med *Med) {
-	med.search(false)
+func searchBackward(med *Med, file *File) {
+	med.search(file, false)
 }
-func searchNextForward(med *Med) {
-	med.searchNext(true)
+func searchNextForward(med *Med, file *File) {
+	med.searchNext(file, true)
 }
-func searchNextBackward(med *Med) {
-	med.searchNext(false)
+func searchNextBackward(med *Med, file *File) {
+	med.searchNext(file, false)
 }
 
-func gotoLine(med *Med) {
-	file := med.file.Value.(*File)
+func gotoLine(med *Med, file *File) {
 	med.searchctx = &SearchContext{point: file.point, view: file.view}
 	update := func() {
 		l, err := strconv.Atoi(string(med.dialog.file.text))
@@ -360,8 +349,7 @@ func gotoLine(med *Med) {
 	}
 	med.startDialog("goto line", update, finish, Helm{})
 }
-func gotoMatchingBracket(med *Med) {
-	file := med.file.Value.(*File)
+func gotoMatchingBracket(med *Med, file *File) {
 	for _, pair := range []string{"()", "[]", "{}"} {
 		off, ok := textMatchingBracket(file.text, file.point.off, pair[:1], pair[1:])
 		if ok {
@@ -370,32 +358,26 @@ func gotoMatchingBracket(med *Med) {
 		}
 	}
 }
-func insertNewline(med *Med) {
-	file := med.file.Value.(*File)
+func insertNewline(med *Med, file *File) {
 	i := lineIndentText(file.text, file.point.off)
 	file.Insert(NL)
 	if keepIndent {
 		file.Insert(i)
 	}
 }
-func backspace(med *Med) {
-	file := med.file.Value.(*File)
+func backspace(med *Med, file *File) {
 	file.Backspace()
 }
-func deleteChar(med *Med) {
-	file := med.file.Value.(*File)
+func deleteChar(med *Med, file *File) {
 	file.DeleteChar()
 }
-func undo(med *Med) {
-	file := med.file.Value.(*File)
+func undo(med *Med, file *File) {
 	file.Undo()
 }
-func redo(med *Med) {
-	file := med.file.Value.(*File)
+func redo(med *Med, file *File) {
 	file.Redo()
 }
-func openBelow(med *Med) {
-	file := med.file.Value.(*File)
+func openBelow(med *Med, file *File) {
 	i := lineIndentText(file.text, file.point.off)
 	file.point.LineEnd(file.text, tabStop)
 	file.Insert(NL)
@@ -404,8 +386,7 @@ func openBelow(med *Med) {
 	}
 	med.mode = EditingMode
 }
-func openAbove(med *Med) {
-	file := med.file.Value.(*File)
+func openAbove(med *Med, file *File) {
 	i := lineIndentText(file.text, file.point.off)
 	file.point.LineStart(file.text, false)
 	file.Insert(NL)
@@ -415,36 +396,32 @@ func openAbove(med *Med) {
 	}
 	med.mode = EditingMode
 }
-func changeLineEnd(med *Med) {
-	file := med.file.Value.(*File)
+func changeLineEnd(med *Med, file *File) {
 	med.clip = file.DeleteLineEnd()
 	med.mode = EditingMode
 }
-func changeLineStart(med *Med) {
-	file := med.file.Value.(*File)
+func changeLineStart(med *Med, file *File) {
 	med.clip = file.DeleteLineStart()
 	med.mode = EditingMode
 }
-func changeLine(med *Med) {
-	file := med.file.Value.(*File)
+func changeLine(med *Med, file *File) {
 	med.clip = file.DeleteLine(false)
 	med.mode = EditingMode
 }
 
-func leaveMark(med *Med) {
-	med.file.Value.(*File).leaveMark()
+func leaveMark(med *Med, file *File) {
+	file.leaveMark()
 }
-func gotoMark(med *Med) {
-	med.file.Value.(*File).gotoMark()
+func gotoMark(med *Med, file *File) {
+	file.gotoMark()
 }
 
 // Execute a function for every line of the selection.
 // The function takes a *File, start of line offset and its indentation offset.
-func (med *Med) mapSelectionRange(fn func(*File, int, int) int, cm bool) {
-	file := med.file.Value.(*File)
+func (med *Med) mapSelectionRange(file *File, fn func(*File, int, int) int, cm bool) {
 	file.leaveMark()
 	if med.mode == SelectionMode {
-		off, end := med.selectionRange()
+		off, end := med.selectionRange(file)
 		med.selection.point = off
 		for p := off; p < end; {
 			_, i := lineIndent(file.text, p)
@@ -462,15 +439,15 @@ func (med *Med) mapSelectionRange(fn func(*File, int, int) int, cm bool) {
 	}
 	file.gotoMark()
 }
-func goComment(med *Med) {
+func goComment(med *Med, file *File) {
 	comment := func(file *File, ls int, i int) int {
 		file.Goto(ls)
 		file.Insert([]byte("//"))
 		return 2
 	}
-	med.mapSelectionRange(comment, true)
+	med.mapSelectionRange(file, comment, true)
 }
-func goUncomment(med *Med) {
+func goUncomment(med *Med, file *File) {
 	uncomment := func(file *File, ls int, i int) int {
 		file.Goto(i)
 		if strings.HasPrefix(string(file.text[i:]), "//") {
@@ -479,17 +456,17 @@ func goUncomment(med *Med) {
 		}
 		return 0
 	}
-	med.mapSelectionRange(uncomment, true)
+	med.mapSelectionRange(file, uncomment, true)
 }
-func goIndent(med *Med) {
+func goIndent(med *Med, file *File) {
 	indent := func(file *File, ls int, i int) int {
 		file.Goto(ls)
 		file.Insert(TAB)
 		return 1
 	}
-	med.mapSelectionRange(indent, false)
+	med.mapSelectionRange(file, indent, false)
 }
-func goUnindent(med *Med) {
+func goUnindent(med *Med, file *File) {
 	unindent := func(file *File, ls int, i int) int {
 		file.Goto(ls)
 		if strings.HasPrefix(string(file.text[ls:]), "\t") {
@@ -498,14 +475,13 @@ func goUnindent(med *Med) {
 		}
 		return 0
 	}
-	med.mapSelectionRange(unindent, false)
+	med.mapSelectionRange(file, unindent, false)
 }
 
-func loadFile(med *Med) {
+func loadFile(med *Med, file *File) {
 	med.load()
 }
-func saveFile(med *Med) {
-	file := med.file.Value.(*File)
+func saveFile(med *Med, file *File) {
 	if file.path == "" {
 		med.saveAs()
 	} else {
@@ -515,54 +491,47 @@ func saveFile(med *Med) {
 		}
 	}
 }
-func switchVisuals(med *Med) {
-	file := med.file.Value.(*File)
+func switchVisuals(med *Med, file *File) {
 	showVisuals = !showVisuals
 	file.view.visual = NewVisual(showVisuals)
 }
-func switchSyntax(med *Med) {
+func switchSyntax(med *Med, file *File) {
 	showSyntax = !showSyntax
 }
 
-func (med *Med) pointToView(down int) {
-	file := med.file.Value.(*File)
+func (med *Med) pointToView(file *File, down int) {
 	p := file.view.start
 	for i := 0; i < down; i++ {
 		_, p = visualLineEnd(file.text, p, file.view.visual.tabStop, file.view.width)
 	}
 	file.Goto(p)
 }
-func pointToViewTop(med *Med) {
-	med.pointToView(0)
+func pointToViewTop(med *Med, file *File) {
+	med.pointToView(file, 0)
 }
-func pointToViewMiddle(med *Med) {
-	file := med.file.Value.(*File)
-	med.pointToView(file.view.height/2)
+func pointToViewMiddle(med *Med, file *File) {
+	med.pointToView(file, file.view.height/2)
 }
-func pointToViewBottom(med *Med) {
-	file := med.file.Value.(*File)
-	med.pointToView(file.view.height-1)
+func pointToViewBottom(med *Med, file *File) {
+	med.pointToView(file, file.view.height-1)
 }
-func viewToPointTop(med *Med) {
-	file := med.file.Value.(*File)
+func viewToPointTop(med *Med, file *File) {
 	file.view.ToPoint(file.text, file.point.off, 0)
 }
-func viewToPointMiddle(med *Med) {
-	file := med.file.Value.(*File)
+func viewToPointMiddle(med *Med, file *File) {
 	file.view.ToPoint(file.text, file.point.off, file.view.height/2)
 }
-func viewToPointBottom(med *Med) {
-	file := med.file.Value.(*File)
+func viewToPointBottom(med *Med, file *File) {
 	file.view.ToPoint(file.text, file.point.off, file.view.height-1)
 }
 
-func commandMode(med *Med) {
+func commandMode(med *Med, file *File) {
 	med.mode = CommandMode
 }
-func editingMode(med *Med) {
+func editingMode(med *Med, file *File) {
 	med.mode = EditingMode
 }
-func switchBuffer(med *Med) {
+func switchBuffer(med *Med, file *File) {
 	update := func() {}
 	finish := func(cancel bool) {
 		if cancel {
@@ -588,7 +557,7 @@ func switchBuffer(med *Med) {
 	}
 	med.startDialog("buffer", update, finish, NewHelm(complete))
 }
-func closeBuffer(med *Med) {
+func closeBuffer(med *Med, file *File) {
 	if med.files.Len() == 1 {
 		med.pushError(errors.New("refusing to close last buffer"))
 		return
@@ -600,7 +569,7 @@ func closeBuffer(med *Med) {
 	}
 	med.file = f
 }
-func godoc(med *Med) {
+func godoc(med *Med, file *File) {
 	update := func() {}
 	finish := func(cancel bool) {
 		if cancel {
@@ -635,25 +604,25 @@ func godoc(med *Med) {
 
 //// Dialog mode commands.
 
-func dialogPointRight(med *Med) {
+func dialogPointRight(med *Med, file *File) {
 	med.dialog.file.point.Right(med.dialog.file.text, tabStop)
 }
-func dialogPointLeft(med *Med) {
+func dialogPointLeft(med *Med, file *File) {
 	med.dialog.file.point.Left(med.dialog.file.text, tabStop)
 }
-func dialogPointLineEnd(med *Med) {
+func dialogPointLineEnd(med *Med, file *File) {
 	med.dialog.file.point.LineEnd(med.dialog.file.text, tabStop)
 }
-func dialogPointLineStart(med *Med) {
+func dialogPointLineStart(med *Med, file *File) {
 	med.dialog.file.point.LineStart(med.dialog.file.text, false)
 }
-func dialogDeleteChar(med *Med) {
+func dialogDeleteChar(med *Med, file *File) {
 	med.dialog.file.DeleteChar()
 }
-func dialogBackspace(med *Med) {
+func dialogBackspace(med *Med, file *File) {
 	med.dialog.file.Backspace()
 }
-func dialogClear(med *Med) {
+func dialogClear(med *Med, file *File) {
 	med.dialog.file.Clear()
 }
 func helmRotate(d *Dialog, inc int) {
@@ -670,26 +639,25 @@ func helmRotate(d *Dialog, inc int) {
 	d.file.Insert([]byte(d.helm.data[d.helm.index]))
 }
 
-func dialogHelmNext(med *Med) {
+func dialogHelmNext(med *Med, file *File) {
 	helmRotate(med.dialog, 1)
 }
-func dialogHelmPrev(med *Med) {
+func dialogHelmPrev(med *Med, file *File) {
 	helmRotate(med.dialog, -1)
 }
-func dialogCancel(med *Med) {
+func dialogCancel(med *Med, file *File) {
 	med.dialog.finish(true)
 }
-func dialogFinish(med *Med) {
+func dialogFinish(med *Med, file *File) {
 	med.dialog.finish(false)
 }
 
-func selectionMode(med *Med) {
-	file := med.file.Value.(*File)
+func selectionMode(med *Med, file *File) {
 	med.mode = SelectionMode
 	med.selection = Selection{CharSelection, file.point.off, file.point.off}
 }
 
-func selectionChange(med *Med) {
+func selectionChange(med *Med, file *File) {
 	if med.selection.sel == CharSelection {
 		med.selection.sel = LineSelection
 	} else {
@@ -697,10 +665,9 @@ func selectionChange(med *Med) {
 	}
 }
 
-func clipCopy(med *Med) {
-	file := med.file.Value.(*File)
+func clipCopy(med *Med, file *File) {
 	if med.mode == SelectionMode {
-		off, end := med.selectionRange()
+		off, end := med.selectionRange(file)
 		med.clip = append([]byte(nil), file.text[off:end]...)
 	} else {
 		med.clip = file.CopyLine()
@@ -708,17 +675,15 @@ func clipCopy(med *Med) {
 	med.mode = CommandMode
 }
 
-func clipPaste(med *Med) {
+func clipPaste(med *Med, file *File) {
 	if med.clip != nil {
-		file := med.file.Value.(*File)
 		file.Insert(med.clip)
 	}
 }
 
-func clipCut(med *Med) {
-	file := med.file.Value.(*File)
+func clipCut(med *Med, file *File) {
 	if med.mode == SelectionMode {
-		off, end := med.selectionRange()
+		off, end := med.selectionRange(file)
 		med.clip = file.Delete(off, end)
 	} else {
 		med.clip = file.DeleteLine(true)
@@ -726,20 +691,17 @@ func clipCut(med *Med) {
 	med.mode = CommandMode
 }
 
-func clipChange(med *Med) {
-	file := med.file.Value.(*File)
-	off, end := med.selectionRange()
+func clipChange(med *Med, file *File) {
+	off, end := med.selectionRange(file)
 	med.clip = file.Delete(off, end)
 	med.mode = EditingMode
 }
 
-func (med *Med) selectionUpdate() {
-	file := med.file.Value.(*File)
+func (med *Med) selectionUpdate(file *File) {
 	med.selection.point = file.point.off
 }
 
-func (med *Med) selectionRange() (start, end int) {
-	file := med.file.Value.(*File)
+func (med *Med) selectionRange(file *File) (start, end int) {
 	start, end = med.selection.anchor, med.selection.point
 	if end < start {
 		start, end = end, start
@@ -756,14 +718,13 @@ func (med *Med) restoreSearchContext(file *File) {
 	file.view = med.searchctx.view
 }
 
-func (med *Med) search(forward bool) {
+func (med *Med) search(file *File, forward bool) {
 	var prompt string
 	if forward {
 		prompt = "search →"
 	} else {
 		prompt = "search ←"
 	}
-	file := med.file.Value.(*File)
 	med.searchctx = &SearchContext{point: file.point, view: file.view}
 	update := func() {
 		med.searchctx.last = append([]byte(nil), med.dialog.file.text...)
@@ -783,11 +744,11 @@ func (med *Med) search(forward bool) {
 	med.startDialog(prompt, update, finish, Helm{})
 }
 
-func (med *Med) searchNext(forward bool) {
+func (med *Med) searchNext(file *File, forward bool) {
 	if med.searchctx == nil || len(med.searchctx.last) == 0 {
 		return
 	}
-	med.file.Value.(*File).SearchNext(med.searchctx.last, forward)
+	file.SearchNext(med.searchctx.last, forward)
 }
 
 func (med *Med) load() {
@@ -1016,7 +977,7 @@ func main() {
 		var highlights []Highlight
 		var selections []Highlight
 		if med.mode == SelectionMode {
-			ss, se := med.selectionRange()
+			ss, se := med.selectionRange(file)
 			selections = append(selections, Highlight{ss, se, theme["selection"]})
 		}
 
@@ -1063,8 +1024,8 @@ func main() {
 			match, v := resolveKeys(editorKeymaps[med.mode], med.keyseq)
 			switch match {
 			case Match:
-				command := v.(func(*Med))
-				command(&med)
+				command := v.(func(*Med, *File))
+				command(&med, file)
 				med.keyseq = ""
 			case PartialMatch:
 				break // Nothing, for now.

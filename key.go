@@ -12,7 +12,7 @@ const (
 
 type Keybind struct {
 	keys string
-	command func(*Med)
+	command func(*Med, *File)
 }
 
 const (
