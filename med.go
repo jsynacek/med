@@ -209,6 +209,10 @@ var selectionModeKeymap = joinKeybinds(
 		{" gj", goUnindent},
 		{"m", selectionChange},
 		{"s", selectionSwapEnd},
+		// Search enables dialog mode, which confuses the display algorithm and selection
+		// is not correctly displayed while searching. It's just the way the modes work
+		// right now. I don't care, yet.
+		{"n", searchForward},
 		{" n", selectionSearch},
 	},
 )
@@ -792,6 +796,7 @@ func (med *Med) search(file *File, forward bool) {
 	} else {
 		prompt = "search ←"
 	}
+	mode := med.mode
 	med.searchctx = &SearchContext{point: file.point, view: file.view}
 	update := func() {
 		med.searchctx.last = append([]byte(nil), med.dialog.file.text...)
@@ -802,7 +807,7 @@ func (med *Med) search(file *File, forward bool) {
 		}
 	}
 	finish := func(cancel bool) {
-		med.mode = CommandMode
+		med.mode = mode
 		if cancel {
 			file.point = med.searchctx.point
 			file.view = med.searchctx.view
