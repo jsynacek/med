@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -22,22 +23,63 @@ func max(x, y int) int {
 	return y
 }
 
-func expandTabs(line []byte, tabStop int) []byte {
-	res := []byte("")
-	n := 0
-	for off := 0; off < len(line); {
-		_, s := utf8.DecodeRune(line[off:])
-		if line[off] == '\t' {
-			step := tabStop - n % tabStop
-			res = append(res, bytes.Repeat([]byte(" "), step)...)
-			n += step
-		} else {
-			res = append(res, line[off:off+s]...)
-			n++
+func textWordNext(text []byte, point int) int {
+	for point < len(text) {
+		r, s := utf8.DecodeRune(text[point:])
+		if unicode.IsLetter(r) {
+			break
 		}
-		off += s
+		point += s
 	}
-	return res
+	for point < len(text) {
+		r, s := utf8.DecodeRune(text[point:])
+		if !unicode.IsLetter(r) {
+			break
+		}
+		point += s
+	}
+	return point
+}
+
+func textWordPrev(text []byte, point int) int {
+	for point > 0 {
+		r, s := utf8.DecodeLastRune(text[:point])
+		if unicode.IsLetter(r) {
+			break
+		}
+		point -= s
+	}
+	for point > 0 {
+		r, s := utf8.DecodeLastRune(text[:point])
+		if !unicode.IsLetter(r) {
+			break
+		}
+		point -= s
+	}
+	return point
+}
+
+func textParagraphNext(text []byte, point int) int {
+	i := bytes.Index(text[point:], []byte("\n\n"))
+	if i >= 0 {
+		return point + i + 2
+	}
+	return len(text)
+}
+
+func textParagraphPrev(text []byte, point int) int {
+	i := bytes.LastIndex(text[:point], []byte("\n\n"))
+	if i < 0 {
+		return 0
+	}
+	// If already at beginning of paragraph, move to previous one.
+	if i+2 == point && point > 0 {
+		i = bytes.LastIndex(text[:point-1], []byte("\n\n"))
+		if i < 0 {
+			return 0
+		}
+	}
+	return i + 2
 }
 
 func visualLineEnd(text []byte, off int, tabStop int, width int) (end, next int) {

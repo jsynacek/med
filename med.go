@@ -118,8 +118,12 @@ var movementKeymap = joinKeybinds(
 		{"j", wMoveSelection(pointLeft)},
 		{"k", wMoveSelection(pointDown)},
 		{"i", wMoveSelection(pointUp)},
-		{";", wMoveSelection(pointLineEnd)},
-		{"h", wMoveSelection(pointLineStart)},
+		{"L", wMoveSelection(pointLineEnd)},
+		{"J", wMoveSelection(pointLineStart)},
+		{"o", wMoveSelection(pointWordRight)},
+		{"u", wMoveSelection(pointWordLeft)},
+		{"O", wMoveSelection(pointParagraphRight)},
+		{"U", wMoveSelection(pointParagraphLeft)},
 		{"K", wMoveSelection(pageDown)},
 		{"I", wMoveSelection(pageUp)},
 		{" k", wMoveSelection(pointTextEnd)},
@@ -149,10 +153,13 @@ var commandModeKeymap = joinKeybinds(
 		{"f", editingMode},
 		{"sk", openBelow},
 		{"si", openAbove},
-		{"d;", changeLineEnd},
-		{"dh", changeLineStart},
+		{"dL", changeLineEnd},
+		{"dJ", changeLineStart},
 		{"dd", changeLine},
-		{"8", selectionMode},
+		{"mm", selectionMode},
+		{"mw", selectWord},
+		{"ms", selectString},
+		{"md", selectBlock},
 		{" f", switchBuffer},
 		{" q", closeBuffer},
 		{"1", leaveMark},
@@ -199,7 +206,9 @@ var selectionModeKeymap = joinKeybinds(
 		{" gu", goUncomment},
 		{" gl", goIndent},
 		{" gj", goUnindent},
-		{"8", selectionChange},
+		{"m", selectionChange},
+		{"s", selectionSwapEnd},
+		{" n", selectionSearch},
 	},
 )
 
@@ -304,6 +313,18 @@ func pointLineEnd(med *Med, file *File) {
 }
 func pointLineStart(med *Med, file *File) {
 	file.point.LineStart(file.text, smartLineStart)
+}
+func pointWordRight(med *Med, file *File) {
+	file.Goto(textWordNext(file.text, file.point.off))
+}
+func pointWordLeft(med *Med, file *File) {
+	file.Goto(textWordPrev(file.text, file.point.off))
+}
+func pointParagraphRight(med *Med, file *File) {
+	file.Goto(textParagraphNext(file.text, file.point.off))
+}
+func pointParagraphLeft(med *Med, file *File) {
+	file.Goto(textParagraphPrev(file.text, file.point.off))
 }
 func pageDown(med *Med, file *File) {
 	file.view.PageDown(file.text)
@@ -655,6 +676,45 @@ func dialogFinish(med *Med, file *File) {
 func selectionMode(med *Med, file *File) {
 	med.mode = SelectionMode
 	med.selection = Selection{CharSelection, file.point.off, file.point.off}
+}
+func selectionSwapEnd(med *Med, file *File) {
+	med.selection.point, med.selection.anchor = med.selection.anchor, med.selection.point
+	file.Goto(med.selection.point)
+}
+func selectionSearch(med *Med, file *File) {
+	med.mode = CommandMode
+	off, end := med.selectionRange(file)
+	med.searchctx = &SearchContext{
+		point: file.point,
+		view: file.view,
+		last: append([]byte(nil), file.text[off:end]...),
+	}
+	file.SearchNext(med.searchctx.last, true)
+}
+
+func selectWord(med *Med, file *File) {
+	a, p, ok := markWord(file.text, file.point.off)
+	if ok {
+		med.mode = SelectionMode
+		med.selection = Selection{CharSelection, p, a}
+		file.Goto(p)
+	}
+}
+func selectString(med *Med, file *File) {
+	a, p, ok := markString(file.text, file.point.off)
+	if ok {
+		med.mode = SelectionMode
+		med.selection = Selection{CharSelection, p, a}
+		file.Goto(p)
+	}
+}
+func selectBlock(med *Med, file *File) {
+	a, p, ok := markBlock(file.text, file.point.off)
+	if ok {
+		med.mode = SelectionMode
+		med.selection = Selection{CharSelection, p, a}
+		file.Goto(p)
+	}
 }
 
 func selectionChange(med *Med, file *File) {
