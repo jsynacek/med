@@ -141,6 +141,7 @@ var commandModeKeymap = joinKeybinds(
 		{"N", searchBackward},
 		{"0", searchNextForward},
 		{"9", searchNextBackward},
+		{"h", searchCurrentWord},
 		{" l", gotoLine},
 		{"/", gotoMatchingBracket},
 		{"c", clipCopy},
@@ -351,6 +352,12 @@ func searchNextForward(med *Med, file *File) {
 }
 func searchNextBackward(med *Med, file *File) {
 	med.searchNext(file, false)
+}
+func searchCurrentWord(med *Med, file *File) {
+	selectWord(med, file)
+	if med.mode == SelectionMode {
+		selectionSearch(med, file)
+	}
 }
 
 func gotoLine(med *Med, file *File) {
