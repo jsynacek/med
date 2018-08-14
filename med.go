@@ -66,6 +66,7 @@ type SearchContext struct {
 }
 
 type Selection struct {
+	active bool
 	sel    int // Type - chars or lines.
 	point  int // Point moves.
 	anchor int // Anchor stays.
@@ -209,10 +210,10 @@ var selectionModeKeymap = joinKeybinds(
 		{" gj", goUnindent},
 		{"m", selectionChange},
 		{"s", selectionSwapEnd},
-		// Search enables dialog mode, which confuses the display algorithm and selection
-		// is not correctly displayed while searching. It's just the way the modes work
-		// right now. I don't care, yet.
 		{"n", searchForward},
+		{"N", searchBackward},
+		{"0", wMoveSelection(searchNextForward)},
+		{"9", wMoveSelection(searchNextBackward)},
 		{" n", selectionSearch},
 	},
 )
@@ -359,9 +360,7 @@ func searchNextBackward(med *Med, file *File) {
 }
 func searchCurrentWord(med *Med, file *File) {
 	selectWord(med, file)
-	if med.mode == SelectionMode {
-		selectionSearch(med, file)
-	}
+	selectionSearch(med, file)
 }
 
 func gotoLine(med *Med, file *File) {
@@ -559,6 +558,7 @@ func viewToPointBottom(med *Med, file *File) {
 
 func commandMode(med *Med, file *File) {
 	med.mode = CommandMode
+	med.selection.active = false
 }
 func editingMode(med *Med, file *File) {
 	med.mode = EditingMode
@@ -686,14 +686,14 @@ func dialogFinish(med *Med, file *File) {
 
 func selectionMode(med *Med, file *File) {
 	med.mode = SelectionMode
-	med.selection = Selection{CharSelection, file.point.off, file.point.off}
+	med.selection = Selection{true, CharSelection, file.point.off, file.point.off}
 }
 func selectionSwapEnd(med *Med, file *File) {
 	med.selection.point, med.selection.anchor = med.selection.anchor, med.selection.point
 	file.Goto(med.selection.point)
 }
 func selectionSearch(med *Med, file *File) {
-	med.mode = CommandMode
+	commandMode(med, file)
 	off, end := med.selectionRange(file)
 	med.searchctx = &SearchContext{
 		point: file.point,
@@ -707,7 +707,7 @@ func selectWord(med *Med, file *File) {
 	a, p, ok := markWord(file.text, file.point.off)
 	if ok {
 		med.mode = SelectionMode
-		med.selection = Selection{CharSelection, p, a}
+		med.selection = Selection{true, CharSelection, p, a}
 		file.Goto(p)
 	}
 }
@@ -715,7 +715,7 @@ func selectString(med *Med, file *File) {
 	a, p, ok := markString(file.text, file.point.off)
 	if ok {
 		med.mode = SelectionMode
-		med.selection = Selection{CharSelection, p, a}
+		med.selection = Selection{true, CharSelection, p, a}
 		file.Goto(p)
 	}
 }
@@ -723,7 +723,7 @@ func selectBlock(med *Med, file *File) {
 	a, p, ok := markBlock(file.text, file.point.off)
 	if ok {
 		med.mode = SelectionMode
-		med.selection = Selection{CharSelection, p, a}
+		med.selection = Selection{true, CharSelection, p, a}
 		file.Goto(p)
 	}
 }
@@ -743,7 +743,7 @@ func clipCopy(med *Med, file *File) {
 	} else {
 		med.clip = file.CopyLine()
 	}
-	med.mode = CommandMode
+	commandMode(med, file)
 }
 
 func clipPaste(med *Med, file *File) {
@@ -759,17 +759,20 @@ func clipCut(med *Med, file *File) {
 	} else {
 		med.clip = file.DeleteLine(true)
 	}
-	med.mode = CommandMode
+	commandMode(med, file)
 }
 
 func clipChange(med *Med, file *File) {
 	off, end := med.selectionRange(file)
 	med.clip = file.Delete(off, end)
 	med.mode = EditingMode
+	med.selection.active = false
 }
 
 func (med *Med) selectionUpdate(file *File) {
-	med.selection.point = file.point.off
+	if med.selection.active {
+		med.selection.point = file.point.off
+	}
 }
 
 func (med *Med) selectionRange(file *File) (start, end int) {
@@ -787,6 +790,7 @@ func (med *Med) selectionRange(file *File) (start, end int) {
 func (med *Med) restoreSearchContext(file *File) {
 	file.point = med.searchctx.point
 	file.view = med.searchctx.view
+	med.selectionUpdate(file)
 }
 
 func (med *Med) search(file *File, forward bool) {
@@ -802,6 +806,7 @@ func (med *Med) search(file *File, forward bool) {
 		med.searchctx.last = append([]byte(nil), med.dialog.file.text...)
 		if i := textSearch(file.text, med.searchctx.last, med.searchctx.point.off, forward); i >= 0 {
 			file.Goto(i)
+			med.selectionUpdate(file)
 		} else {
 			med.restoreSearchContext(file)
 		}
@@ -809,8 +814,7 @@ func (med *Med) search(file *File, forward bool) {
 	finish := func(cancel bool) {
 		med.mode = mode
 		if cancel {
-			file.point = med.searchctx.point
-			file.view = med.searchctx.view
+			med.restoreSearchContext(file)
 		}
 	}
 	med.startDialog(prompt, update, finish, Helm{})
@@ -1048,7 +1052,7 @@ func main() {
 
 		var highlights []Highlight
 		var selections []Highlight
-		if med.mode == SelectionMode {
+		if med.selection.active {
 			ss, se := med.selectionRange(file)
 			selections = append(selections, Highlight{ss, se, theme["selection"]})
 		}
