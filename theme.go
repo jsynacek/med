@@ -2,7 +2,7 @@ package main
 
 import (
 	"image/color"
-	"jsynacek/term"
+	"github.com/jsynacek/med/term"
 )
 
 

@@ -12,7 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-	"jsynacek/term"
+	"github.com/jsynacek/med/sam"
+	"github.com/jsynacek/med/term"
 )
 
 const (
@@ -181,6 +182,7 @@ var commandModeKeymap = joinKeybinds(
 		{"zI", viewToPointTop},
 		{"zJ", viewToPointMiddle},
 		{"zK", viewToPointBottom},
+		{"a", samCommand},
 	},
 )
 
@@ -215,6 +217,7 @@ var selectionModeKeymap = joinKeybinds(
 		{"0", wMoveSelection(searchNextForward)},
 		{"9", wMoveSelection(searchNextBackward)},
 		{" n", selectionSearch},
+		{"a", samCommand},
 	},
 )
 
@@ -554,6 +557,55 @@ func viewToPointMiddle(med *Med, file *File) {
 }
 func viewToPointBottom(med *Med, file *File) {
 	file.view.ToPoint(file.text, file.point.off, file.view.height-1)
+}
+
+func (med *Med) samExecute(file *File, addr *sam.Address, cmdList []*sam.Command) error {
+	dot := Dot{file.point.off, file.point.off}
+	if med.selection.active {
+		dot.start, dot.end = med.selectionRange(file)
+	}
+	// Address always takes effect, even though selection might be active.
+	if addr != nil {
+		dot.start, dot.end = file.samAddress(addr)
+		if addr.End != nil {
+			_, dot.end = file.samAddress(addr.End)
+		}
+		dot.end = max(dot.start, dot.end)
+	}
+	if len(cmdList) > 0 {
+		var err error
+		dot, err = file.samExecuteCommandList(cmdList, dot)
+		if err != nil {
+			return err
+		}
+		commandMode(med, file)
+	}
+	med.mode = SelectionMode
+	med.selection = Selection{true, CharSelection, dot.end, dot.start}
+	file.Goto(dot.end)
+	return nil
+}
+
+func samCommand(med *Med, file *File) {
+	update := func() {}
+	finish := func(cancel bool) {
+		if cancel || len(med.dialog.file.text) < 1 {
+			return
+		}
+		var p sam.Parser
+		p.Init(med.dialog.file.text)
+		addr, cmdList, err := p.Parse()
+		if err != nil {
+			med.pushError(err)
+			return
+		}
+		err = med.samExecute(file, addr, cmdList)
+		if err != nil {
+			med.pushError(err)
+			return
+		}
+	}
+	med.startDialog("sam", update, finish, Helm{})
 }
 
 func commandMode(med *Med, file *File) {

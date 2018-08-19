@@ -1,8 +1,8 @@
 package main
 
 import (
-	"jsynacek/term"
 	"unicode/utf8"
+	"github.com/jsynacek/med/term"
 )
 
 // Visual aspects of the displayed text.

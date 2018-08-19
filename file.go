@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
-	"io/ioutil"
 	"container/list"
+	"github.com/jsynacek/med/sam"
+	"io/ioutil"
 	"os"
+	"regexp"
+	"strconv"
 	"unicode"
 	"unicode/utf8"
 )
@@ -25,9 +28,9 @@ import (
 // unrestricted and see, if it's going to be a real problem.
 type Undo struct {
 	// Offset of the change. It is always at the beginning of the change.
-	off      int
+	off int
 	// Copy of the changed text.
-	text    []byte
+	text []byte
 	// True if text was inserted during the change, false if deleted.
 	isInsert bool
 }
@@ -45,17 +48,17 @@ type File struct {
 	text     []byte
 	// TODO: Turn these into Options struct and pass it around from main to functions as needed.
 	// Options.
-	tabStop  int
+	tabStop int
 }
 
 func NewFile(name, path string, text []byte) (file *File) {
 	file = &File{
-		name: name,
-		path: path,
-		view: NewView(false),
+		name:  name,
+		path:  path,
+		view:  NewView(false),
 		undos: list.New(),
 		redos: list.New(),
-		text: text,
+		text:  text,
 	}
 	return
 }
@@ -70,13 +73,13 @@ func LoadFile(path string) (*File, error) {
 		return nil, err
 	}
 	return &File{
-		name: path,
-		path: path,
+		name:     path,
+		path:     path,
 		modified: false,
-		view: NewView(false),
-		undos: list.New(),
-		redos: list.New(),
-		text: text,
+		view:     NewView(false),
+		undos:    list.New(),
+		redos:    list.New(),
+		text:     text,
 	}, nil
 }
 
@@ -97,7 +100,7 @@ func (file *File) SearchNext(what []byte, forward bool) {
 	if forward {
 		off = file.point.off + 1
 	} else {
-		off = max(0, file.point.off - 1)
+		off = max(0, file.point.off-1)
 	}
 	if i := textSearch(file.text, what, off, forward); i >= 0 {
 		file.Goto(i)
@@ -288,4 +291,136 @@ func (file *File) Save() error {
 	}
 	file.modified = false
 	return nil
+}
+
+type Dot struct {
+	start, end int
+}
+
+func (file *File) samAddress(addr *sam.Address) (start, end int) {
+	switch addr.Type {
+	case '0':
+		start = 0
+	case '$':
+		start = len(file.text)
+		end = start
+	case '#':
+		p := file.point
+		c, _ := strconv.Atoi(addr.Arg)
+		p.Goto(file.text, c, file.view.visual.tabStop)
+		start = p.off
+		end = start
+	case 'l':
+		p := file.point
+		l, _ := strconv.Atoi(addr.Arg)
+		p.GotoLine(file.text, l)
+		start = p.off
+		end = lineEnd(file.text, start) + 1
+	case '/':
+		arg := []byte(addr.Arg)
+		if i := textSearch(file.text, arg, file.point.off, true); i >= 0 {
+			start = i
+			end = i + utf8.RuneCount(arg)
+		}
+	}
+	return
+}
+
+func (file *File) samExecuteEdit(cmd *sam.Command, dot Dot) (Dot, int) {
+	off := 0
+	switch cmd.Name {
+	case "d":
+		file.Delete(dot.start, dot.end)
+		dot.end = dot.start
+		off = -len(cmd.Arg)
+	case "a":
+		file.Goto(dot.end)
+		file.Insert([]byte(cmd.Arg))
+		dot.start, dot.end = dot.end, dot.end+len(cmd.Arg)
+		off = len(cmd.Arg)
+	case "i":
+		file.Goto(dot.start)
+		file.Insert([]byte(cmd.Arg))
+		dot.end = dot.start + len(cmd.Arg)
+		off = len(cmd.Arg)
+	case "c":
+		file.Goto(dot.start)
+		deleted := file.Delete(dot.start, dot.end)
+		file.Insert([]byte(cmd.Arg))
+		dot.end = dot.start + len(cmd.Arg)
+		off = len(cmd.Arg) - len(deleted)
+	}
+	return dot, off
+}
+
+func (file *File) samExecuteX(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	re, err := regexp.Compile(cmd.Arg)
+	if err != nil {
+		return dot, 0, err
+	}
+	p := dot.start
+	matches := re.FindAllIndex(file.text[p:dot.end], -1)
+	offset := 0
+	for _, match := range matches {
+		var off int
+		dot.start, dot.end = p+match[0]+offset, p+match[1]+offset
+		dot, off, err = file.samExecuteCommand(cmd.Next, dot)
+		if err != nil {
+			return dot, 0, err
+		}
+		offset += off
+	}
+	return dot, offset, nil
+}
+
+func (file *File) samExecuteCond(cmd *sam.Command, dot Dot, include bool) (Dot, int, error) {
+	re, err := regexp.Compile(cmd.Arg)
+	if err != nil {
+		return dot, 0, err
+	}
+	var off int
+	if include && re.Match(file.text[dot.start:dot.end]) {
+		dot, off, err = file.samExecuteCommand(cmd.Next, dot)
+	} else if !include && !re.Match(file.text[dot.start:dot.end]) {
+		dot, off, err = file.samExecuteCommand(cmd.Next, dot)
+	}
+	return dot, off, err
+}
+
+func (file *File) samExecuteG(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	return file.samExecuteCond(cmd, dot, true)
+}
+
+func (file *File) samExecuteV(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	return file.samExecuteCond(cmd, dot, false)
+}
+
+func (file *File) samExecuteCommand(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	if cmd == nil {
+		return dot, 0, nil
+	}
+	var err error
+	var off int
+	switch cmd.Name {
+	case "d", "a", "i", "c":
+		dot, off = file.samExecuteEdit(cmd, dot)
+	case "x":
+		dot, off, err = file.samExecuteX(cmd, dot)
+	case "g":
+		dot, off, err = file.samExecuteG(cmd, dot)
+	case "v":
+		dot, off, err = file.samExecuteV(cmd, dot)
+	}
+	return dot, off, err
+}
+
+func (file *File) samExecuteCommandList(cmdList []*sam.Command, dot Dot) (Dot, error) {
+	var err error
+	for _, cmd := range cmdList {
+		dot, _, err = file.samExecuteCommand(cmd, dot)
+		if err != nil {
+			return dot, err
+		}
+	}
+	return dot, nil
 }
