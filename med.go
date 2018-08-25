@@ -852,7 +852,14 @@ func (med *Med) search(file *File, forward bool) {
 		prompt = "search ←"
 	}
 	mode := med.mode
-	med.searchctx = &SearchContext{point: file.point, view: file.view}
+
+	if med.searchctx != nil {
+		med.searchctx.point = file.point
+		med.searchctx.view = file.view
+		// Preserve last search.
+	} else {
+		med.searchctx = &SearchContext{point: file.point, view: file.view}
+	}
 	update := func() {
 		med.searchctx.last = append([]byte(nil), med.dialog.file.text...)
 		if i := textSearch(file.text, med.searchctx.last, med.searchctx.point.off, forward); i >= 0 {
