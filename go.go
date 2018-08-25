@@ -78,7 +78,7 @@ func markWord(text []byte, point int) (int, int, bool) {
 	if !unicode.IsLetter(r) {
 		return 0, 0, false
 	}
-	for ; p >= 0; {
+	for p >= 0 {
 		r, s = utf8.DecodeLastRune(text[:p])
 		if !unicode.IsLetter(r) {
 			break
@@ -88,7 +88,7 @@ func markWord(text []byte, point int) (int, int, bool) {
 	ws := p
 
 	p = point
-	for ; p < len(text); {
+	for p < len(text) {
 		r, s = utf8.DecodeRune(text[p:])
 		if !unicode.IsLetter(r) {
 			break

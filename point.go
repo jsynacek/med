@@ -19,7 +19,7 @@ func (p *Point) Column(text []byte, tabWidth int) (col int) {
 	for i < p.off {
 		_, s := utf8.DecodeRune(text[i:])
 		if text[i] == '\t' {
-			col += tabWidth - col % tabWidth
+			col += tabWidth - col%tabWidth
 		} else {
 			col++
 		}
@@ -60,7 +60,7 @@ func (p *Point) keepColumn(text []byte, tabStop int) {
 	// on their position and on tabStop.
 	for col := 0; col < p.col && p.off < le; {
 		if text[p.off] == '\t' {
-			col += tabStop - col % tabStop
+			col += tabStop - col%tabStop
 		} else {
 			col++
 		}
@@ -89,7 +89,7 @@ func (p *Point) Up(text []byte, tabStop int, keepColumn bool) {
 	if ls == 0 {
 		return
 	}
-	p.off = lineStart(text, ls - 1)
+	p.off = lineStart(text, ls-1)
 	if keepColumn {
 		p.keepColumn(text, tabStop)
 	} else {

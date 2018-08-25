@@ -1,24 +1,27 @@
 package main
 
 import (
-	"image/color"
 	"github.com/jsynacek/med/term"
+	"image/color"
 )
-
 
 type Attribute struct {
 	fg, bg *color.RGBA
 }
 
 func (attr Attribute) Out(t *term.Term) {
-	if attr.fg != nil { t.AttrFgRGB(attr.fg) }
-	if attr.bg != nil { t.AttrBgRGB(attr.bg) }
+	if attr.fg != nil {
+		t.AttrFgRGB(attr.fg)
+	}
+	if attr.bg != nil {
+		t.AttrBgRGB(attr.bg)
+	}
 }
 
 type Palette map[string]*color.RGBA
 type Theme map[string]Attribute
 
-var solarizedPalette = Palette {
+var solarizedPalette = Palette{
 	"base03":  &color.RGBA{0x00, 0x2b, 0x36, 0},
 	"base02":  &color.RGBA{0x07, 0x36, 0x42, 0},
 	"base01":  &color.RGBA{0x58, 0x6e, 0x75, 0},
@@ -37,26 +40,25 @@ var solarizedPalette = Palette {
 	"green":   &color.RGBA{0x85, 0x99, 0x00, 0},
 }
 
-var solarizedTheme = Theme {
-	"normal": Attribute{solarizedPalette["base00"], solarizedPalette["base3"]},
-	"normalBg": Attribute{nil, solarizedPalette["base3"]},
-	"point": Attribute{solarizedPalette["base2"], solarizedPalette["blue"]},
-	"pointOnTab": Attribute{solarizedPalette["base00"], solarizedPalette["base2"]},
-	"status": Attribute{solarizedPalette["base00"], solarizedPalette["base2"]},
+var solarizedTheme = Theme{
+	"normal":       Attribute{solarizedPalette["base00"], solarizedPalette["base3"]},
+	"normalBg":     Attribute{nil, solarizedPalette["base3"]},
+	"point":        Attribute{solarizedPalette["base2"], solarizedPalette["blue"]},
+	"pointOnTab":   Attribute{solarizedPalette["base00"], solarizedPalette["base2"]},
+	"status":       Attribute{solarizedPalette["base00"], solarizedPalette["base2"]},
 	"dialogPrompt": Attribute{solarizedPalette["blue"], solarizedPalette["base3"]},
-	"error": Attribute{solarizedPalette["red"], solarizedPalette["base3"]},
-	"selection": Attribute{nil, solarizedPalette["base2"]},
+	"error":        Attribute{solarizedPalette["red"], solarizedPalette["base3"]},
+	"selection":    Attribute{nil, solarizedPalette["base2"]},
 	// Language.
 	"comment": Attribute{solarizedPalette["base1"], nil},
 	"keyword": Attribute{solarizedPalette["green"], nil},
-	"string": Attribute{solarizedPalette["red"], nil},
-	"char": Attribute{solarizedPalette["orange"], nil},
+	"string":  Attribute{solarizedPalette["red"], nil},
+	"char":    Attribute{solarizedPalette["orange"], nil},
 }
 
 var theme = solarizedTheme
 
 type Highlight struct {
 	start, end int
-	attr Attribute
+	attr       Attribute
 }
-

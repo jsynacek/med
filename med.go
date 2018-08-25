@@ -2,8 +2,10 @@ package main
 
 import (
 	"container/list"
-	"fmt"
 	"errors"
+	"fmt"
+	"github.com/jsynacek/med/sam"
+	"github.com/jsynacek/med/term"
 	"io/ioutil"
 	"log"
 	"os"
@@ -12,8 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-	"github.com/jsynacek/med/sam"
-	"github.com/jsynacek/med/term"
 )
 
 const (
@@ -37,13 +37,13 @@ var (
 	showSyntax       = true
 )
 
-type updateFunc   func()
-type finishFunc   func(bool)
+type updateFunc func()
+type finishFunc func(bool)
 type completeFunc func()
 
 type Helm struct {
-	active   bool
-	index    int
+	active bool
+	index  int
 	// TODO: Reimplement this using container/ring.
 	data     []string
 	complete completeFunc
@@ -85,7 +85,6 @@ type Med struct {
 	clip      []byte
 }
 
-
 //// Keymaps.
 
 func joinKeybinds(values ...interface{}) (result []Keybind) {
@@ -102,7 +101,7 @@ func joinKeybinds(values ...interface{}) (result []Keybind) {
 	return
 }
 
-var commonMovementKeymap = []Keybind {
+var commonMovementKeymap = []Keybind{
 	{kRight, wMoveSelection(pointRight)},
 	{kLeft, wMoveSelection(pointLeft)},
 	{kDown, wMoveSelection(pointDown)},
@@ -187,9 +186,9 @@ var commandModeKeymap = joinKeybinds(
 )
 
 var editingModeKeymap = joinKeybinds(
-	Keybind{kEsc, func(*Med, *File){}},
+	Keybind{kEsc, func(*Med, *File) {}},
 	commonMovementKeymap,
-	[]Keybind {
+	[]Keybind{
 		{kAlt(" "), commandMode},
 		{kEnter, insertNewline},
 		{kDelete, deleteChar},
@@ -198,7 +197,7 @@ var editingModeKeymap = joinKeybinds(
 )
 
 var selectionModeKeymap = joinKeybinds(
-	Keybind{kEsc, func(*Med, *File){}},
+	Keybind{kEsc, func(*Med, *File) {}},
 	movementKeymap,
 	[]Keybind{
 		{kAlt(" "), commandMode},
@@ -221,8 +220,8 @@ var selectionModeKeymap = joinKeybinds(
 	},
 )
 
-var dialogModeKeymap = []Keybind {
-	{kEsc, func(*Med, *File){}},
+var dialogModeKeymap = []Keybind{
+	{kEsc, func(*Med, *File) {}},
 	{kAlt(" "), dialogCancel},
 	{kRight, dialogPointRight},
 	{kLeft, dialogPointLeft},
@@ -265,8 +264,8 @@ func (med *Med) startDialog(prompt string, update updateFunc, finish finishFunc,
 	med.mode = DialogMode
 	d := &Dialog{
 		prompt: prompt,
-		file: &File{},
-		helm: helm,
+		file:   &File{},
+		helm:   helm,
 	}
 	med.dialog = d
 	if d.helm.active {
@@ -296,7 +295,7 @@ func wMoveSelection(fn func(*Med, *File)) func(*Med, *File) {
 	}
 }
 
-func wDialogUpdate (fn func(*Med, *File)) func(*Med, *File) {
+func wDialogUpdate(fn func(*Med, *File)) func(*Med, *File) {
 	return func(med *Med, file *File) {
 		fn(med, file)
 		med.dialog.update()
@@ -465,7 +464,7 @@ func (med *Med) mapSelectionRange(file *File, fn func(*File, int, int) int, cm b
 		}
 		med.selection.anchor = end - 1
 		if cm {
-		      med.mode = CommandMode
+			med.mode = CommandMode
 		}
 	} else {
 		ls, i := lineIndent(file.text, file.point.off)
@@ -749,8 +748,8 @@ func selectionSearch(med *Med, file *File) {
 	off, end := med.selectionRange(file)
 	med.searchctx = &SearchContext{
 		point: file.point,
-		view: file.view,
-		last: append([]byte(nil), file.text[off:end]...),
+		view:  file.view,
+		last:  append([]byte(nil), file.text[off:end]...),
 	}
 	file.SearchNext(med.searchctx.last, true)
 }
@@ -1074,15 +1073,15 @@ func (med *Med) init(args []string) {
 
 func main() {
 	med := Med{
-		files: list.New(),
-		file: nil,
-		mode: CommandMode,
-		dialog: nil,
+		files:     list.New(),
+		file:      nil,
+		mode:      CommandMode,
+		dialog:    nil,
 		searchctx: nil,
 		selection: Selection{},
-		errors: list.New(),
-		keyseq: "",
-		clip: nil,
+		errors:    list.New(),
+		keyseq:    "",
+		clip:      nil,
 	}
 	med.init(os.Args[1:])
 

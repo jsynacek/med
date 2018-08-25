@@ -7,7 +7,7 @@ import (
 )
 
 var TAB = []byte("\t")
-var NL  = []byte("\n")
+var NL = []byte("\n")
 
 func min(x, y int) int {
 	if x < y {
@@ -83,20 +83,20 @@ func textParagraphPrev(text []byte, point int) int {
 }
 
 func visualLineEnd(text []byte, off int, tabStop int, width int) (end, next int) {
-	for p, col := lineStart(text, off), 0 ; p < len(text); {
+	for p, col := lineStart(text, off), 0; p < len(text); {
 		r, s := utf8.DecodeRune(text[p:])
 		if r == '\t' {
-			col += tabStop - col % tabStop
+			col += tabStop - col%tabStop
 		} else {
 			col++
 		}
 		if col >= width {
 			if p > off {
-				return p, p+s
+				return p, p + s
 			}
 			col = 0
 		} else if r == '\n' {
-			return p, p+1
+			return p, p + 1
 		}
 		p += s
 	}
@@ -106,10 +106,10 @@ func visualLineEnd(text []byte, off int, tabStop int, width int) (end, next int)
 func visualLineStart(text []byte, off int, tabStop int, width int) (start, prev int) {
 	start = lineStart(text, off)
 	prev = max(0, start-1)
-	for p, col := lineStart(text, off), 0 ; p < off && p < len(text); {
+	for p, col := lineStart(text, off), 0; p < off && p < len(text); {
 		r, s := utf8.DecodeRune(text[p:])
 		if r == '\t' {
-			col += tabStop - col % tabStop
+			col += tabStop - col%tabStop
 		} else {
 			col++
 		}
@@ -124,7 +124,6 @@ func visualLineStart(text []byte, off int, tabStop int, width int) (start, prev 
 	}
 	return
 }
-
 
 func lineEnd(text []byte, off int) int {
 	if off >= len(text) {
@@ -172,7 +171,7 @@ func textSearch(text []byte, what []byte, off int, forward bool) int {
 			return off + i
 		}
 	} else {
-		off = min(len(text), off + len(what))
+		off = min(len(text), off+len(what))
 		i := bytes.LastIndex(text[:off], what)
 		if i >= 0 {
 			return i

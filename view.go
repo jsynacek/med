@@ -1,8 +1,8 @@
 package main
 
 import (
-	"unicode/utf8"
 	"github.com/jsynacek/med/term"
+	"unicode/utf8"
 )
 
 // Visual aspects of the displayed text.
@@ -40,7 +40,7 @@ func NewVisual(show bool) Visual {
 }
 
 func NewView(show bool) View {
-	return View{start: 0, end: 1, width: term.Cols()-1, height: term.Rows()-2, visual: NewVisual(show)}
+	return View{start: 0, end: 1, width: term.Cols() - 1, height: term.Rows() - 2, visual: NewVisual(show)}
 }
 
 func (view *View) lineEnd(text []byte, off int) int {
@@ -52,7 +52,7 @@ func (view *View) lineEnd(text []byte, off int) int {
 			col++
 		}
 		if r == '\n' {
-			return off+1
+			return off + 1
 		}
 		off += s
 	}
@@ -170,7 +170,9 @@ func (view *View) DisplayText(t *term.Term, text []byte, point int, selections [
 		}
 
 		// Point is the highest priority.
-		if p == point { drawPoint = true }
+		if p == point {
+			drawPoint = true
+		}
 		// Then selection.
 		if p == sel.start && sel.start != sel.end {
 			sel.attr.Out(t)
@@ -183,11 +185,15 @@ func (view *View) DisplayText(t *term.Term, text []byte, point int, selections [
 		r, s := utf8.DecodeRune(text[p:])
 		if r == '\t' {
 			c := col
-			col = min(width, col + ts - (col % ts))
-			if drawPoint { theme["point"].Out(t) }
+			col = min(width, col+ts-(col%ts))
+			if drawPoint {
+				theme["point"].Out(t)
+			}
 			t.Write([]byte(string(view.visual.tabChar)))
 
-			if drawPoint { theme["pointOnTab"].Out(t) }
+			if drawPoint {
+				theme["pointOnTab"].Out(t)
+			}
 			for ; c < col-1; c++ {
 				t.Write([]byte(string(view.visual.tabFill)))
 			}
@@ -203,7 +209,7 @@ func (view *View) DisplayText(t *term.Term, text []byte, point int, selections [
 			if drawPoint {
 				theme["point"].Out(t)
 			}
-			t.Write(text[p:p+s])
+			t.Write(text[p : p+s])
 			col++
 		}
 
