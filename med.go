@@ -4,8 +4,6 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
-	"github.com/jsynacek/med/sam"
-	"github.com/jsynacek/med/term"
 	"io/ioutil"
 	"log"
 	"os"
@@ -14,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jsynacek/med/sam"
+	"github.com/jsynacek/med/term"
 )
 
 const (
@@ -102,33 +103,31 @@ func joinKeybinds(values ...interface{}) (result []Keybind) {
 }
 
 var commonMovementKeymap = []Keybind{
-	{kRight, wMoveSelection(pointRight)},
-	{kLeft, wMoveSelection(pointLeft)},
-	{kDown, wMoveSelection(pointDown)},
-	{kUp, wMoveSelection(pointUp)},
-	{kEnd, wMoveSelection(pointLineEnd)},
-	{kHome, wMoveSelection(pointLineStart)},
-	{kPageDown, wMoveSelection(pageDown)},
-	{kPageUp, wMoveSelection(pageUp)},
+	{kRight, move(pointRight)},
+	{kLeft, move(pointLeft)},
+	{kDown, move(pointDown)},
+	{kUp, move(pointUp)},
+	{kEnd, move(pointLineEnd)},
+	{kHome, move(pointLineStart)},
+	{kPageDown, move(pageDown)},
+	{kPageUp, move(pageUp)},
 }
 
 var movementKeymap = joinKeybinds(
 	commonMovementKeymap,
 	[]Keybind{
-		{"l", wMoveSelection(pointRight)},
-		{"j", wMoveSelection(pointLeft)},
-		{"k", wMoveSelection(pointDown)},
-		{"i", wMoveSelection(pointUp)},
-		{"L", wMoveSelection(pointLineEnd)},
-		{"J", wMoveSelection(pointLineStart)},
-		{"o", wMoveSelection(pointWordRight)},
-		{"u", wMoveSelection(pointWordLeft)},
-		{"O", wMoveSelection(pointParagraphRight)},
-		{"U", wMoveSelection(pointParagraphLeft)},
-		{"K", wMoveSelection(pageDown)},
-		{"I", wMoveSelection(pageUp)},
-		{" k", wMoveSelection(pointTextEnd)},
-		{" i", wMoveSelection(pointTextStart)},
+		{"l", move(pointRight)},
+		{"j", move(pointLeft)},
+		{"k", move(pointDown)},
+		{"i", move(pointUp)},
+		{"L", move(pointLineEnd)},
+		{"J", move(pointLineStart)},
+		{"O", move(pointParagraphRight)},
+		{"U", move(pointParagraphLeft)},
+		{"K", move(pageDown)},
+		{"I", move(pageUp)},
+		{" k", move(pointTextEnd)},
+		{" i", move(pointTextStart)},
 	},
 )
 
@@ -201,7 +200,7 @@ var selectionModeKeymap = joinKeybinds(
 	movementKeymap,
 	[]Keybind{
 		{kAlt(" "), commandMode},
-		{"/", wMoveSelection(gotoMatchingBracket)},
+		{"/", move(gotoMatchingBracket)},
 		{"c", clipCopy},
 		{"x", clipCut},
 		{"d", clipChange},
