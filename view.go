@@ -68,6 +68,12 @@ func (view *View) AdjustToPoint(text []byte, point int) {
 	}
 }
 
+func (view *View) Adjust(text []byte, point int) {
+	if point >= view.end || point < view.start {
+		view.ToPoint(text, point, view.height/3)
+	}
+}
+
 // Clip highlights. Highlights that are not visible are discarded, partially visible
 // ones are clipped based on their start.
 func (view *View) clipHighlights(highlights []Highlight) (res []Highlight) {

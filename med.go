@@ -140,8 +140,8 @@ var commandModeKeymap = joinKeybinds(
 	[]Keybind{
 		{"n", searchForward},
 		{"N", searchBackward},
-		{"0", searchNextForward},
-		{"9", searchNextBackward},
+		{"o", searchNextForward},
+		{"u", searchNextBackward},
 		{"h", searchCurrentWord},
 		{" l", gotoLine},
 		{"/", gotoMatchingBracket},
@@ -213,8 +213,8 @@ var selectionModeKeymap = joinKeybinds(
 		{"s", selectionSwapEnd},
 		{"n", searchForward},
 		{"N", searchBackward},
-		{"0", wMoveSelection(searchNextForward)},
-		{"9", wMoveSelection(searchNextBackward)},
+		{"o", searchNextForward},
+		{"u", searchNextBackward},
 		{" n", selectionSearch},
 		{"a", samCommand},
 	},
@@ -286,12 +286,13 @@ func (med *Med) startDialog(prompt string, update updateFunc, finish finishFunc,
 
 //// Command wrappers with extra functionality.
 
-func wMoveSelection(fn func(*Med, *File)) func(*Med, *File) {
+func move(fn func(*Med, *File)) func(*Med, *File) {
 	return func(med *Med, file *File) {
 		fn(med, file)
 		if med.mode == SelectionMode {
 			med.selectionUpdate(file)
 		}
+		file.view.AdjustToPoint(file.text, file.point.off)
 	}
 }
 
@@ -321,12 +322,6 @@ func pointLineEnd(med *Med, file *File) {
 }
 func pointLineStart(med *Med, file *File) {
 	file.point.LineStart(file.text, smartLineStart)
-}
-func pointWordRight(med *Med, file *File) {
-	file.Goto(textWordNext(file.text, file.point.off))
-}
-func pointWordLeft(med *Med, file *File) {
-	file.Goto(textWordPrev(file.text, file.point.off))
 }
 func pointParagraphRight(med *Med, file *File) {
 	file.Goto(textParagraphNext(file.text, file.point.off))
@@ -863,8 +858,13 @@ func (med *Med) search(file *File, forward bool) {
 	update := func() {
 		med.searchctx.last = append([]byte(nil), med.dialog.file.text...)
 		if i := textSearch(file.text, med.searchctx.last, med.searchctx.point.off, forward); i >= 0 {
-			file.Goto(i)
+			if forward {
+				file.Goto(i + len(med.dialog.file.text))
+			} else {
+				file.Goto(i)
+			}
 			med.selectionUpdate(file)
+			file.view.Adjust(file.text, file.point.off)
 		} else {
 			med.restoreSearchContext(file)
 		}
@@ -883,6 +883,8 @@ func (med *Med) searchNext(file *File, forward bool) {
 		return
 	}
 	file.SearchNext(med.searchctx.last, forward)
+	med.selectionUpdate(file)
+	file.view.Adjust(file.text, file.point.off)
 }
 
 func (med *Med) load() {
@@ -1115,7 +1117,6 @@ func main() {
 			selections = append(selections, Highlight{ss, se, theme["selection"]})
 		}
 
-		file.view.AdjustToPoint(file.text, file.point.off)
 		if showSyntax {
 			highlights = getSyntax(file.text, file.view.start, file.view.height)
 		}

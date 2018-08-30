@@ -98,12 +98,16 @@ func (file *File) GotoLine(l int) {
 func (file *File) SearchNext(what []byte, forward bool) {
 	var off int
 	if forward {
-		off = file.point.off + 1
+		off = file.point.off
 	} else {
 		off = max(0, file.point.off-1)
 	}
 	if i := textSearch(file.text, what, off, forward); i >= 0 {
-		file.Goto(i)
+		if forward {
+			file.Goto(i + len(what))
+		} else {
+			file.Goto(i)
+		}
 	}
 }
 
