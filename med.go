@@ -35,7 +35,7 @@ var (
 	keepIndent       = true
 	smartLineStart   = true
 	showVisuals      = false
-	showSyntax       = true
+	showSyntax       = false
 )
 
 type updateFunc func()
