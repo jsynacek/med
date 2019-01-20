@@ -255,13 +255,22 @@ func (file *File) DotDuplicateAbove() {
 	file.DotInsert(clip, After, true)
 }
 
-func (file *File) DotOpenBelow(keepDot bool) { // TODO keepindent
-	dot := file.dot
+func (file *File) DotOpenBelow() {
 	file.DotSet(lineEnd(file.text, file.dot.end))
-	file.Insert(NL)
-	if keepDot {
-		file.dot = dot
-	}
+	file.DotInsert(NL, After, true)
+	file.DotSet(lineEnd(file.text, file.dot.end))
+	//if keepIndent {
+		//file.Insert(i)
+	//}
+}
+
+func (file *File) DotOpenAbove() {
+	file.DotSet(lineStart(file.text, file.dot.start))
+	file.DotInsert(NL, Before, true)
+	file.DotSet(lineStart(file.text, file.dot.start))
+	//if keepIndent {
+		//file.Insert(i)
+	//}
 }
 
 func (file *File) ClipCopy() []byte {
@@ -333,6 +342,14 @@ func (file *File) MarkNextLine(expand bool) {
 		file.dot.start = ls
 		file.dot.end = le
 	}
+}
+
+func (file *File) SelectLineEnd() {
+	file.dot.end = lineEnd(file.text, file.dot.end)
+}
+
+func (file *File) SelectLineStart() {
+	file.dot.start = lineStart(file.text, file.dot.start)
 }
 
 type InsertOp int

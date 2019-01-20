@@ -144,10 +144,10 @@ var commandModeKeymap = joinKeybinds(
 	Keybind{kEsc, commandMode},
 	//movementKeymap,
 	[]Keybind{
-		{"k", viewScrollDown},
-		{"i", viewScrollUp},
-		{"K", viewScrollPageDown},
-		{"I", viewScrollPageUp},
+		{"k", viewScrollPageDown},
+		{"i", viewScrollPageUp},
+		{"K", viewScrollDown},
+		{"I", viewScrollUp},
 		{"n", searchForward},
 		{"N", searchBackward},
 		{";", searchView},
@@ -162,8 +162,6 @@ var commandModeKeymap = joinKeybinds(
 
 		{"e", dotDuplicateBelow},
 		{"E", dotDuplicateAbove},
-		//{"?", dotInsertLineEnd}, == openLineEnd
-		//{"?", dotInsertLineStart}, == openLineStart
 		{"sk", dotOpenBelow},
 		{"si", dotOpenAbove},
 
@@ -171,15 +169,13 @@ var commandModeKeymap = joinKeybinds(
 		{kAlt("j"), selectPrevWord},
 		{kAlt("k"), selectNextLine},
 		{kAlt("K"), selectNextLineExpand},
+		{"0", selectLineEnd},
+		{"9", selectLineStart},
 		//{"mw", selectWord},
 		//{"ms", selectString},
 		//{"md", selectBlock},
 
 
-		//{"n", searchForward},
-		//{"N", searchBackward},
-		//{"o", searchNextForward},
-		//{"u", searchNextBackward},
 		//{"h", searchCurrentWord},
 		{" l", gotoLine},
 		//{"/", gotoMatchingBracket},
@@ -443,6 +439,14 @@ func selectNextLineExpand(med *Med, file *File) {
 	file.MarkNextLine(true)
 }
 
+func selectLineEnd(med *Med, file *File) {
+	file.SelectLineEnd()
+}
+
+func selectLineStart(med *Med, file *File) {
+	file.SelectLineStart()
+}
+
 // TODO: sed for now
 func dotPipe(med *Med, file *File) {
 	finish := func(cancel bool) {
@@ -479,20 +483,14 @@ func dotDuplicateAbove(med *Med, file *File) {
 }
 
 func dotOpenBelow(med *Med, file *File) {
-	file.DotOpenBelow(false)
+	file.DotOpenBelow()
 	med.mode = EditingMode
 }
 
 func dotOpenAbove(med *Med, file *File) {
+	file.DotOpenAbove()
+	med.mode = EditingMode
 }
-
-// TMP
-//func markLines(med *Med, file *File) {
-	//med.selection.active = true
-	//med.selection.anchor = lineStart(file.text, med.selection.anchor)
-	//med.selection.point = med.selection.anchor + 50
-//}
-
 
 //// Command wrappers with extra functionality.
 
