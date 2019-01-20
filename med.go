@@ -183,8 +183,10 @@ var commandModeKeymap = joinKeybinds(
 		//{"h", searchCurrentWord},
 		{" l", gotoLine},
 		//{"/", gotoMatchingBracket},
-		{"y", clipCopy},
-		{"v", clipPaste},
+		{"c", clipCopy},
+		{"v", clipPasteAfter},
+		{"V", clipPasteBefore},
+		{",v", clipPasteChange},
 		{"x", clipCut},
 		//{"e", backspace},
 		//{"r", deleteChar},
@@ -222,7 +224,7 @@ var commandModeKeymap = joinKeybinds(
 
 var editingModeKeymap = joinKeybinds(
 	Keybind{kEsc, func(*Med, *File) {}},
-	commonMovementKeymap,
+	//commonMovementKeymap,
 	[]Keybind{
 		{kAlt(" "), commandMode},
 		{kEnter, insertNewline},
@@ -382,7 +384,7 @@ func searchView(med *Med, file *File) {
 		}
 		file.SearchView(med.dialog2.file.text)
 	}
-	med.searchDialog("search ←", finish)
+	med.searchDialog("view search →", finish)
 }
 
 func searchNextForward2(med *Med, file *File) {
@@ -973,13 +975,26 @@ func clipCopy(med *Med, file *File) {
 	med.clip = file.ClipCopy()
 }
 
-func clipPaste(med *Med, file *File) {
+func clipPasteAfter(med *Med, file *File) {
 	if med.clip != nil {
-		file.Insert(med.clip)
+		file.DotInsert(med.clip, After, true)
+	}
+}
+
+func clipPasteBefore(med *Med, file *File) {
+	if med.clip != nil {
+		file.DotInsert(med.clip, Before, true)
+	}
+}
+
+func clipPasteChange(med *Med, file *File) {
+	if med.clip != nil {
+		file.DotInsert(med.clip, Replace, true)
 	}
 }
 
 func clipCut(med *Med, file *File) {
+	med.clip = append([]byte(nil), file.DotText()...)
 	file.DotDelete()
 	//if med.mode == SelectionMode {
 		//off, end := med.selectionRange(file)

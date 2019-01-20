@@ -239,8 +239,7 @@ func (file *File) DotDuplicateBelow() {
 	de := max(0, file.dot.end - 1)
 	clip := append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
 	file.DotSet(min(len(file.text), lineEnd(file.text, de) + 1))
-	file.DotInsert(clip, After)
-	file.dot.end += len(clip)
+	file.DotInsert(clip, After, true)
 }
 
 func (file *File) DotDuplicateAbove() {
@@ -253,8 +252,7 @@ func (file *File) DotDuplicateAbove() {
 		ls = lineStart(file.text, ls-1)
 	}
 	file.DotSet(lineStart(file.text, ls))
-	file.DotInsert(clip, After)
-	file.dot.end += len(clip)
+	file.DotInsert(clip, After, true)
 }
 
 func (file *File) DotOpenBelow(keepDot bool) { // TODO keepindent
@@ -345,7 +343,7 @@ const (
 	Replace
 )
 
-func (file *File) DotInsert(what []byte, op InsertOp) {
+func (file *File) DotInsert(what []byte, op InsertOp, setDot bool) {
 	if len(what) == 0 {
 		return
 	}
@@ -356,15 +354,21 @@ func (file *File) DotInsert(what []byte, op InsertOp) {
 	case Before:
 		p = file.dot.start
 	case Replace:
+		p = file.dot.start
+		file.DotDelete()
 	}
 	file.text = textInsert(file.text, p, what)
+	if setDot {
+		file.dot.start = p
+		file.dot.end = p + len(what)
+	}
 	file.modified = true
 }
 
 // Insert the byte slice what in the after the current dot and set the dot.
 // Insert is to be called from the main editor.
 func (file *File) Insert(what []byte) {
-	file.DotInsert(what, After)
+	file.DotInsert(what, After, false)
 	file.DotSet(file.dot.end + len(what))
 	// TODO undo
 }
@@ -408,12 +412,13 @@ func (file *File) Delete(start, end int) (what []byte) {
 	return
 }
 
+// TODO: These two only really make sense when in edit mode and dot is empty.
 func (file *File) DeleteChar() {
-	//if file.point.off >= len(file.text) {
-		//return
-	//}
-	//_, s := utf8.DecodeRune(file.text[file.point.off:])
-	//file.Delete(file.point.off, file.point.off+s)
+	if file.dot.start >= len(file.text) {
+		return
+	}
+	_, s := utf8.DecodeRune(file.text[file.dot.start:])
+	file.Delete(file.dot.start, file.dot.start+s)
 }
 
 func (file *File) Backspace() {
