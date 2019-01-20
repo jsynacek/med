@@ -209,6 +209,10 @@ func (view *View) DisplayText(t *term.Term, text []byte, point int, selections [
 				theme["point"].Out(t)
 				t.Write([]byte(" "))
 			}
+			if drawSelection {
+				theme["selection"].Out(t)
+				t.Write([]byte("↵"))
+			}
 			col = 0
 			l++
 			t.MoveTo(l, 0)
@@ -250,18 +254,6 @@ func (view *View) ScrollDown(text []byte) {
 
 func (view *View) ScrollUp(text []byte) {
 	view.start, _ = visualLineStart(text, view.start-1, view.visual.tabStop, view.width)
-}
-
-func (view *View) PageDown(text []byte) {
-	for i := 0; i < view.height-3; i++ {
-		view.ScrollDown(text)
-	}
-}
-
-func (view *View) PageUp(text []byte) {
-	for i := 0; i < view.height-3; i++ {
-		view.ScrollUp(text)
-	}
 }
 
 func (view *View) ToPoint(text []byte, point int, up int) {

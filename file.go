@@ -3,11 +3,11 @@ package main
 import (
 	"bytes"
 	"container/list"
-	"github.com/jsynacek/med/sam"
+	//"github.com/jsynacek/med/sam"
 	"io/ioutil"
 	"os"
 	"regexp"
-	"strconv"
+	//"strconv"
 	"unicode"
 	"unicode/utf8"
 )
@@ -40,7 +40,10 @@ type File struct {
 	name     string
 	path     string
 	modified bool
-	point    Point
+	point    Point // TODO: Remove this in favour of Dot
+
+	dot      Dot
+
 	view     View
 	undos    *list.List
 	redos    *list.List
@@ -88,36 +91,29 @@ func SaveFile(path string, data []byte) error {
 }
 
 func (file *File) Goto(off int) {
-	file.point.Goto(file.text, off, file.tabStop)
+       //file.point.Goto(file.text, off, file.tabStop)
 }
 
 func (file *File) GotoLine(l int) {
-	file.point.GotoLine(file.text, l)
+       //file.point.Goto(file.text, off, file.tabStop)
 }
 
 func (file *File) SearchNext(what []byte, forward bool) {
-	var off int
-	if forward {
-		off = file.point.off
-	} else {
-		off = max(0, file.point.off-1)
-	}
-	if i := textSearch(file.text, what, off, forward); i >= 0 {
-		if forward {
-			file.Goto(i + len(what))
-		} else {
-			file.Goto(i)
-		}
-	}
+	//var off int
+	//if forward {
+		//off = file.point.off
+	//} else {
+		//off = max(0, file.point.off-1)
+	//}
+	//if i := textSearch(file.text, what, off, forward); i >= 0 {
+		//if forward {
+			//file.Goto(i + len(what))
+		//} else {
+			//file.Goto(i)
+		//}
+	//}
 }
 
-func (file *File) leaveMark() {
-	file.mark = file.point
-}
-
-func (file *File) gotoMark() {
-	file.point = file.mark
-}
 
 func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 	// Mini file (dialogs) doesn't use the undo stack.
@@ -130,34 +126,34 @@ func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 }
 
 func (file *File) Undo() {
-	e := file.undos.Front()
-	if e == nil {
-		return
-	}
-	u := file.undos.Remove(e).(Undo)
-	file.Goto(u.off)
-	if u.isInsert {
-		file.delete(u.off, u.off+len(u.text))
-	} else {
-		// Use insert() so the undo record is not recreated.
-		file.insert(u.text)
-	}
-	file.redos.PushFront(u)
+	//e := file.undos.Front()
+	//if e == nil {
+		//return
+	//}
+	//u := file.undos.Remove(e).(Undo)
+	//file.Goto(u.off)
+	//if u.isInsert {
+		//file.delete(u.off, u.off+len(u.text))
+	//} else {
+		//// Use insert() so the undo record is not recreated.
+		//file.insert(u.text)
+	//}
+	//file.redos.PushFront(u)
 }
 
 func (file *File) Redo() {
-	e := file.redos.Front()
-	if e == nil {
-		return
-	}
-	u := file.redos.Remove(e).(Undo)
-	file.Goto(u.off)
-	if u.isInsert {
-		file.insert(u.text)
-	} else {
-		file.delete(u.off, u.off+len(u.text))
-	}
-	file.undos.PushFront(u)
+	//e := file.redos.Front()
+	//if e == nil {
+		//return
+	//}
+	//u := file.redos.Remove(e).(Undo)
+	//file.Goto(u.off)
+	//if u.isInsert {
+		//file.insert(u.text)
+	//} else {
+		//file.delete(u.off, u.off+len(u.text))
+	//}
+	//file.undos.PushFront(u)
 }
 
 // Insert the byte slice what in the current point position.
@@ -183,6 +179,77 @@ func (file *File) insert(what []byte) {
 	file.modified = true
 }
 
+func (file *File) DotIsEmpty() bool {
+	return file.dot.start == file.dot.end
+}
+
+func (file *File) DotReset() {
+	file.DotSet(file.view.start)
+}
+
+func (file *File) DotSet(pos int) {
+	file.dot.start = pos
+	file.dot.end = pos
+}
+
+func (file *File) DotText() []byte {
+	return file.text[file.dot.start:file.dot.end]
+}
+
+func (file *File) DotDelete() {
+	file.Delete(file.dot.start, file.dot.end)
+}
+
+func (file *File) DotChange(what []byte) {
+	file.DotDelete()
+	file.Insert(what)
+}
+
+func (file *File) DotOpenBelow(keepDot bool) { // TODO keepindent
+	dot := file.dot
+	file.DotSet(lineEnd(file.text, file.dot.end))
+	file.Insert(NL)
+	if keepDot {
+		file.dot = dot
+	}
+}
+
+func (file *File) ClipCopy() []byte {
+	return append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
+}
+
+var wordRe = regexp.MustCompile(`\w+`)
+
+func (file *File) MarkNextWord(expand bool) {
+	p := min(len(file.text), file.dot.end)
+	loc := wordRe.FindIndex(file.text[p:])
+	if loc != nil {
+		file.dot.start = loc[0] + p
+		file.dot.end = loc[1] + p
+	}
+}
+
+func (file *File) MarkNextLine(expand bool) {
+	ls := lineStart(file.text, file.dot.start)
+	le := lineEnd(file.text, ls) + 1
+	// If expansion is required, simply move the dot end.
+	if expand {
+		if le < len(file.text) {
+			file.dot.end = lineEnd(file.text, file.dot.end) + 1
+		}
+	// No expansion. Either select the current line, or select the next line,
+	// depending on the state of the dot.
+	} else if ls == file.dot.start && le == file.dot.end {
+		if le < len(file.text) {
+			file.dot.start = le
+			file.dot.end = lineEnd(file.text, le) + 1
+		}
+	} else {
+		file.dot.start = ls
+		file.dot.end = le
+	}
+}
+
 // Insert the byte slice what in the current point position.
 // Insert is to be called from the main editor.
 func (file *File) Insert(what []byte) {
@@ -197,8 +264,11 @@ func (file *File) Insert(what []byte) {
 		if what[0] == '\r' {
 			what[0] = '\n'
 		}
-		file.pushUndo(what, file.point.off, true)
-		file.insert(what)
+		// TODO: Remove this after dot works.
+		//file.pushUndo(what, file.point.off, true)
+		//file.insert(what)
+		file.text = textInsert(file.text, file.dot.end, what)
+		file.DotSet(file.dot.end + len(what))
 	}
 }
 
@@ -233,56 +303,42 @@ func (file *File) delete(start, end int) (what []byte) {
 func (file *File) Delete(start, end int) (what []byte) {
 	start = max(0, start)
 	end = min(len(file.text), end)
-	what = file.delete(start, end)
-	file.pushUndo(what, start, false)
-	return
-}
-
-func (file *File) DeleteLineEnd() (what []byte) {
-	what = file.Delete(file.point.off, lineEnd(file.text, file.point.off))
-	return
-}
-
-func (file *File) DeleteLineStart() (what []byte) {
-	what = file.Delete(lineStart(file.text, file.point.off), file.point.off)
-	return
-}
-
-func (file *File) DeleteLine(whole bool) (line []byte) {
-	ls, le := lineStart(file.text, file.point.off), lineEnd(file.text, file.point.off)
-	if whole {
-		line = file.Delete(ls, le+1)
-	} else {
-		line = file.Delete(ls, le)
-	}
+	file.text, what = textDelete(file.text, start, end)
+	file.DotSet(start)
+	file.modified = true
+	//what = file.delete(start, end)
+	//file.pushUndo(what, start, false)
 	return
 }
 
 func (file *File) DeleteChar() {
-	if file.point.off >= len(file.text) {
-		return
-	}
-	_, s := utf8.DecodeRune(file.text[file.point.off:])
-	file.Delete(file.point.off, file.point.off+s)
+	//if file.point.off >= len(file.text) {
+		//return
+	//}
+	//_, s := utf8.DecodeRune(file.text[file.point.off:])
+	//file.Delete(file.point.off, file.point.off+s)
 }
 
 func (file *File) Backspace() {
-	if file.point.off == 0 {
+	if file.dot.start == 0 && file.DotIsEmpty() {
 		return
 	}
-	file.point.Left(file.text, file.tabStop)
-	file.DeleteChar()
+	if file.DotIsEmpty() {
+		_, s := utf8.DecodeLastRune(file.text[:file.dot.end])
+		file.dot.start -= s
+	}
+	file.DotDelete()
 }
 
 func (file *File) Clear() {
-	if len(file.text) == 0 {
-		return
-	}
-	file.pushUndo(append([]byte(nil), file.text...), 0, false)
-	file.point = Point{}
-	file.mark = Point{}
-	file.text = []byte("")
-	file.modified = true
+	//if len(file.text) == 0 {
+		//return
+	//}
+	//file.pushUndo(append([]byte(nil), file.text...), 0, false)
+	//file.point = Point{}
+	//file.mark = Point{}
+	//file.text = []byte("")
+	//file.modified = true
 }
 
 func (file *File) Save() error {
@@ -301,130 +357,130 @@ type Dot struct {
 	start, end int
 }
 
-func (file *File) samAddress(addr *sam.Address) (start, end int) {
-	switch addr.Type {
-	case '0':
-		start = 0
-	case '$':
-		start = len(file.text)
-		end = start
-	case '#':
-		p := file.point
-		c, _ := strconv.Atoi(addr.Arg)
-		p.Goto(file.text, c, file.view.visual.tabStop)
-		start = p.off
-		end = start
-	case 'l':
-		p := file.point
-		l, _ := strconv.Atoi(addr.Arg)
-		p.GotoLine(file.text, l)
-		start = p.off
-		end = lineEnd(file.text, start) + 1
-	case '/':
-		arg := []byte(addr.Arg)
-		if i := textSearch(file.text, arg, file.point.off, true); i >= 0 {
-			start = i
-			end = i + utf8.RuneCount(arg)
-		}
-	}
-	return
-}
+//func (file *File) samAddress(addr *sam.Address) (start, end int) {
+	//switch addr.Type {
+	//case '0':
+		//start = 0
+	//case '$':
+		//start = len(file.text)
+		//end = start
+	//case '#':
+		//p := file.point
+		//c, _ := strconv.Atoi(addr.Arg)
+		//p.Goto(file.text, c, file.view.visual.tabStop)
+		//start = p.off
+		//end = start
+	//case 'l':
+		//p := file.point
+		//l, _ := strconv.Atoi(addr.Arg)
+		//p.GotoLine(file.text, l)
+		//start = p.off
+		//end = lineEnd(file.text, start) + 1
+	//case '/':
+		//arg := []byte(addr.Arg)
+		//if i := textSearch(file.text, arg, file.point.off, true); i >= 0 {
+			//start = i
+			//end = i + utf8.RuneCount(arg)
+		//}
+	//}
+	//return
+//}
 
-func (file *File) samExecuteEdit(cmd *sam.Command, dot Dot) (Dot, int) {
-	off := 0
-	switch cmd.Name {
-	case "d":
-		file.Delete(dot.start, dot.end)
-		dot.end = dot.start
-		off = -len(cmd.Arg)
-	case "a":
-		file.Goto(dot.end)
-		file.Insert([]byte(cmd.Arg))
-		dot.start, dot.end = dot.end, dot.end+len(cmd.Arg)
-		off = len(cmd.Arg)
-	case "i":
-		file.Goto(dot.start)
-		file.Insert([]byte(cmd.Arg))
-		dot.end = dot.start + len(cmd.Arg)
-		off = len(cmd.Arg)
-	case "c":
-		file.Goto(dot.start)
-		deleted := file.Delete(dot.start, dot.end)
-		file.Insert([]byte(cmd.Arg))
-		dot.end = dot.start + len(cmd.Arg)
-		off = len(cmd.Arg) - len(deleted)
-	}
-	return dot, off
-}
+//func (file *File) samExecuteEdit(cmd *sam.Command, dot Dot) (Dot, int) {
+	//off := 0
+	//switch cmd.Name {
+	//case "d":
+		//file.Delete(dot.start, dot.end)
+		//dot.end = dot.start
+		//off = -len(cmd.Arg)
+	//case "a":
+		//file.Goto(dot.end)
+		//file.Insert([]byte(cmd.Arg))
+		//dot.start, dot.end = dot.end, dot.end+len(cmd.Arg)
+		//off = len(cmd.Arg)
+	//case "i":
+		//file.Goto(dot.start)
+		//file.Insert([]byte(cmd.Arg))
+		//dot.end = dot.start + len(cmd.Arg)
+		//off = len(cmd.Arg)
+	//case "c":
+		//file.Goto(dot.start)
+		//deleted := file.Delete(dot.start, dot.end)
+		//file.Insert([]byte(cmd.Arg))
+		//dot.end = dot.start + len(cmd.Arg)
+		//off = len(cmd.Arg) - len(deleted)
+	//}
+	//return dot, off
+//}
 
-func (file *File) samExecuteX(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	re, err := regexp.Compile(cmd.Arg)
-	if err != nil {
-		return dot, 0, err
-	}
-	p := dot.start
-	matches := re.FindAllIndex(file.text[p:dot.end], -1)
-	offset := 0
-	for _, match := range matches {
-		var off int
-		dot.start, dot.end = p+match[0]+offset, p+match[1]+offset
-		dot, off, err = file.samExecuteCommand(cmd.Next, dot)
-		if err != nil {
-			return dot, 0, err
-		}
-		offset += off
-	}
-	return dot, offset, nil
-}
+//func (file *File) samExecuteX(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	//re, err := regexp.Compile(cmd.Arg)
+	//if err != nil {
+		//return dot, 0, err
+	//}
+	//p := dot.start
+	//matches := re.FindAllIndex(file.text[p:dot.end], -1)
+	//offset := 0
+	//for _, match := range matches {
+		//var off int
+		//dot.start, dot.end = p+match[0]+offset, p+match[1]+offset
+		//dot, off, err = file.samExecuteCommand(cmd.Next, dot)
+		//if err != nil {
+			//return dot, 0, err
+		//}
+		//offset += off
+	//}
+	//return dot, offset, nil
+//}
 
-func (file *File) samExecuteCond(cmd *sam.Command, dot Dot, include bool) (Dot, int, error) {
-	re, err := regexp.Compile(cmd.Arg)
-	if err != nil {
-		return dot, 0, err
-	}
-	var off int
-	if include && re.Match(file.text[dot.start:dot.end]) {
-		dot, off, err = file.samExecuteCommand(cmd.Next, dot)
-	} else if !include && !re.Match(file.text[dot.start:dot.end]) {
-		dot, off, err = file.samExecuteCommand(cmd.Next, dot)
-	}
-	return dot, off, err
-}
+//func (file *File) samExecuteCond(cmd *sam.Command, dot Dot, include bool) (Dot, int, error) {
+	//re, err := regexp.Compile(cmd.Arg)
+	//if err != nil {
+		//return dot, 0, err
+	//}
+	//var off int
+	//if include && re.Match(file.text[dot.start:dot.end]) {
+		//dot, off, err = file.samExecuteCommand(cmd.Next, dot)
+	//} else if !include && !re.Match(file.text[dot.start:dot.end]) {
+		//dot, off, err = file.samExecuteCommand(cmd.Next, dot)
+	//}
+	//return dot, off, err
+//}
 
-func (file *File) samExecuteG(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	return file.samExecuteCond(cmd, dot, true)
-}
+//func (file *File) samExecuteG(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	//return file.samExecuteCond(cmd, dot, true)
+//}
 
-func (file *File) samExecuteV(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	return file.samExecuteCond(cmd, dot, false)
-}
+//func (file *File) samExecuteV(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	//return file.samExecuteCond(cmd, dot, false)
+//}
 
-func (file *File) samExecuteCommand(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	if cmd == nil {
-		return dot, 0, nil
-	}
-	var err error
-	var off int
-	switch cmd.Name {
-	case "d", "a", "i", "c":
-		dot, off = file.samExecuteEdit(cmd, dot)
-	case "x":
-		dot, off, err = file.samExecuteX(cmd, dot)
-	case "g":
-		dot, off, err = file.samExecuteG(cmd, dot)
-	case "v":
-		dot, off, err = file.samExecuteV(cmd, dot)
-	}
-	return dot, off, err
-}
+//func (file *File) samExecuteCommand(cmd *sam.Command, dot Dot) (Dot, int, error) {
+	//if cmd == nil {
+		//return dot, 0, nil
+	//}
+	//var err error
+	//var off int
+	//switch cmd.Name {
+	//case "d", "a", "i", "c":
+		//dot, off = file.samExecuteEdit(cmd, dot)
+	//case "x":
+		//dot, off, err = file.samExecuteX(cmd, dot)
+	//case "g":
+		//dot, off, err = file.samExecuteG(cmd, dot)
+	//case "v":
+		//dot, off, err = file.samExecuteV(cmd, dot)
+	//}
+	//return dot, off, err
+//}
 
-func (file *File) samExecuteCommandList(cmdList []*sam.Command, dot Dot) (Dot, error) {
-	var err error
-	for _, cmd := range cmdList {
-		dot, _, err = file.samExecuteCommand(cmd, dot)
-		if err != nil {
-			return dot, err
-		}
-	}
-	return dot, nil
-}
+//func (file *File) samExecuteCommandList(cmdList []*sam.Command, dot Dot) (Dot, error) {
+	//var err error
+	//for _, cmd := range cmdList {
+		//dot, _, err = file.samExecuteCommand(cmd, dot)
+		//if err != nil {
+			//return dot, err
+		//}
+	//}
+	//return dot, nil
+//}

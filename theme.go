@@ -48,7 +48,7 @@ var solarizedTheme = Theme{
 	"status":       Attribute{solarizedPalette["base00"], solarizedPalette["base2"]},
 	"dialogPrompt": Attribute{solarizedPalette["blue"], solarizedPalette["base3"]},
 	"error":        Attribute{solarizedPalette["red"], solarizedPalette["base3"]},
-	"selection":    Attribute{nil, solarizedPalette["base2"]},
+	"selection":    Attribute{solarizedPalette["base3"], solarizedPalette["cyan"]},
 	// Language.
 	"comment": Attribute{solarizedPalette["base1"], nil},
 	"keyword": Attribute{solarizedPalette["green"], nil},

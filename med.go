@@ -59,6 +59,12 @@ type Dialog struct {
 	finish finishFunc
 }
 
+type Dialog2 struct {
+	prompt string
+	file   *File
+	finish finishFunc
+}
+
 type SearchContext struct {
 	// Original point and view.
 	point Point
@@ -79,6 +85,8 @@ type Med struct {
 	file      *list.Element
 	mode      int
 	dialog    *Dialog
+	dialog2   *Dialog2
+	lastsearch []byte
 	searchctx *SearchContext
 	selection Selection
 	errors    *list.List
@@ -109,8 +117,8 @@ var commonMovementKeymap = []Keybind{
 	{kUp, move(pointUp)},
 	{kEnd, move(pointLineEnd)},
 	{kHome, move(pointLineStart)},
-	{kPageDown, move(pageDown)},
-	{kPageUp, move(pageUp)},
+	//{kPageDown, move(pageDown)},
+	//{kPageUp, move(pageUp)},
 }
 
 var movementKeymap = joinKeybinds(
@@ -124,8 +132,8 @@ var movementKeymap = joinKeybinds(
 		{"J", move(pointLineStart)},
 		{"O", move(pointParagraphRight)},
 		{"U", move(pointParagraphLeft)},
-		{"K", move(pageDown)},
-		{"I", move(pageUp)},
+		//{"K", move(pageDown)},
+		//{"I", move(pageUp)},
 		{" k", move(pointTextEnd)},
 		{" i", move(pointTextStart)},
 	},
@@ -135,52 +143,78 @@ var commandModeKeymap = joinKeybinds(
 	// Catch kEsc first, so it doesn't count as a key sequence start other keys,
 	// that start with an escape sequence.
 	Keybind{kEsc, commandMode},
-	movementKeymap,
+	//movementKeymap,
 	[]Keybind{
-		{"n", searchForward},
-		{"N", searchBackward},
-		{"o", searchNextForward},
-		{"u", searchNextBackward},
-		{"h", searchCurrentWord},
-		{" l", gotoLine},
-		{"/", gotoMatchingBracket},
-		{"c", clipCopy},
+		{"k", viewScrollDown},
+		{"i", viewScrollUp},
+		{"K", viewScrollPageDown},
+		{"I", viewScrollPageUp},
+		{";", searchViewForward},
+		//{"]", markLines},
+		{"o", searchNextForward2},
+		{"u", searchNextBackward2},
+
+		{"f", dotAppend},
+		{"F", dotAppendLineEnd},
+		{"a", dotInsert},
+		{"A", dotInsertLineStart},
+		{"c", dotChange},
+		{"|", dotPipe},
+		{"r", dotReset},
+
+		{"sk", dotOpenBelow},
+		//{"sk", dotOpenBelow},
+		{"si", dotOpenAbove},
+
+		{kAlt("l"), selectNextWord},
+		{kAlt("k"), selectNextLine},
+		{kAlt("K"), selectNextLineExpand},
+		//{"mw", selectWord},
+		//{"ms", selectString},
+		//{"md", selectBlock},
+
+
+		//{"n", searchForward},
+		//{"N", searchBackward},
+		//{"o", searchNextForward},
+		//{"u", searchNextBackward},
+		//{"h", searchCurrentWord},
+		//{" l", gotoLine},
+		//{"/", gotoMatchingBracket},
+		{"y", clipCopy},
 		{"v", clipPaste},
 		{"x", clipCut},
-		{"e", backspace},
-		{"r", deleteChar},
-		{"y", undo},
-		{"Y", redo},
-		{"f", editingMode},
-		{"sk", openBelow},
-		{"si", openAbove},
-		{"dL", changeLineEnd},
-		{"dJ", changeLineStart},
-		{"dd", changeLine},
-		{"mm", selectionMode},
-		{"mw", selectWord},
-		{"ms", selectString},
-		{"md", selectBlock},
+		//{"e", backspace},
+		//{"r", deleteChar},
+		//{"y", undo},
+		//{"Y", redo},
+		//{"f", editingMode},
+		//{"sk", openBelow},
+		//{"si", openAbove},
+		//{"dL", changeLineEnd},
+		//{"dJ", changeLineStart},
+		//{"dd", changeLine},
+		//{"mm", selectionMode},
 		{" f", switchBuffer},
 		{" q", closeBuffer},
-		{"1", leaveMark},
-		{"2", gotoMark},
-		{" gc", goComment},
-		{" gu", goUncomment},
-		{" gl", goIndent},
-		{" gj", goUnindent},
-		{" gd", godoc},
+		//{"1", leaveMark},
+		//{"2", gotoMark},
+		//{" gc", goComment},
+		//{" gu", goUncomment},
+		//{" gl", goIndent},
+		//{" gj", goUnindent},
+		//{" gd", godoc},
 		{" o", loadFile},
 		{" s", saveFile},
-		{"`", switchVisuals},
-		{"~", switchSyntax},
-		{"zi", pointToViewTop},
-		{"zj", pointToViewMiddle},
-		{"zk", pointToViewBottom},
-		{"zI", viewToPointTop},
-		{"zJ", viewToPointMiddle},
-		{"zK", viewToPointBottom},
-		{"a", samCommand},
+		//{"`", switchVisuals},
+		//{"~", switchSyntax},
+		//{"zi", pointToViewTop},
+		//{"zj", pointToViewMiddle},
+		//{"zk", pointToViewBottom},
+		//{"zI", viewToPointTop},
+		//{"zJ", viewToPointMiddle},
+		//{"zK", viewToPointBottom},
+		//{"a", samCommand},
 	},
 )
 
@@ -283,6 +317,176 @@ func (med *Med) startDialog(prompt string, update updateFunc, finish finishFunc,
 	}
 }
 
+// TODO: implement viewScrollStart - start of text
+//       implement viewScrollEnd - end of text
+
+func viewScrollDown(med *Med, file *File) {
+	//for i := 0; i < file.view.height/10; i++ {
+		file.view.ScrollDown(file.text)
+	//}
+}
+func viewScrollUp(med *Med, file *File) {
+	//for i := 0; i < file.view.height/10; i++ {
+		file.view.ScrollUp(file.text)
+	//}
+}
+func viewScrollPageDown(med *Med, file *File) {
+	for i := 0; i < file.view.height-2; i++ {
+		file.view.ScrollDown(file.text)
+	}
+}
+func viewScrollPageUp(med *Med, file *File) {
+	for i := 0; i < file.view.height-2; i++ {
+		file.view.ScrollUp(file.text)
+	}
+}
+
+// DotReset(pos int) -- reset the dot(selection) to the position and make it zero-length
+// DotRange() -- selectionRange
+// ...
+
+//func searchCommon(text []byte, what []byte, forward bool) int {
+//}
+
+// TODO: Refactor this mess.
+func searchViewForward(med *Med, file *File) {
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		med.lastsearch = append([]byte(nil), med.dialog2.file.text...)
+		if i := textSearch2(file.text[file.view.start:file.view.end], med.dialog2.file.text, true); i >= 0 {
+			i += file.view.start
+			end := i + len(med.dialog2.file.text)
+			file.dot.start = i
+			file.dot.end = end
+		}
+	}
+	med.dialog2 = &Dialog2{
+		prompt: "search view",
+		file:   &File{},
+		finish: finish,
+	}
+	med.mode = DialogMode
+}
+
+func searchNextForward2(med *Med, file *File) {
+	if med.lastsearch == nil {
+		return
+	}
+	_, se := med.selectionRange(file)
+	if i := textSearch2(file.text[se:], med.lastsearch, true); i >= 0 {
+		i += se
+		end := i + len(med.dialog2.file.text)
+		file.dot.start = i
+		file.dot.end = end
+		file.view.Adjust(file.text, end)
+	}
+}
+
+func searchNextBackward2(med *Med, file *File) {
+	if med.lastsearch == nil {
+		return
+	}
+	ss, _ := med.selectionRange(file)
+	if i := textSearch2(file.text[:ss], med.lastsearch, false); i >= 0 {
+		end := i + len(med.dialog2.file.text)
+		file.dot.start = i
+		file.dot.end = end
+		file.view.Adjust(file.text, i)
+	}
+}
+
+func dotAppend(med *Med, file *File) {
+	_, se := med.selectionRange(file)
+	file.DotSet(se)
+	med.selection.active = false
+	med.mode = EditingMode
+}
+
+func dotAppendLineEnd(med *Med, file *File) {
+	_, se := med.selectionRange(file)
+	file.DotSet(lineEnd(file.text, se))
+	med.selection.active = false
+	med.mode = EditingMode
+}
+
+func dotInsert(med *Med, file *File) {
+	ss, _ := med.selectionRange(file)
+	file.Goto(ss)
+	med.selection.active = false
+	med.mode = EditingMode
+}
+
+func dotInsertLineStart(med *Med, file *File) {
+	file.DotSet(lineStart(file.text, file.dot.start))
+	med.mode = EditingMode
+}
+
+func dotChange(med *Med, file *File) {
+	// TODO: Should this keep the inserted text in the dot?
+	file.DotDelete()
+	med.mode = EditingMode
+}
+
+// TODO: This is probably not needed...
+func dotReset(med *Med, file *File) {
+	file.DotReset()
+}
+
+func selectNextWord(med *Med, file *File) {
+	file.MarkNextWord(false)
+}
+
+func selectNextLine(med *Med, file *File) {
+	file.MarkNextLine(false)
+}
+
+func selectNextLineExpand(med *Med, file *File) {
+	file.MarkNextLine(true)
+}
+
+// TODO: sed for now
+func dotPipe(med *Med, file *File) {
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		cmd := exec.Command("sed", string(med.dialog2.file.text))
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			med.pushError(err)
+			return
+		}
+		stdin.Write([]byte(file.DotText()))
+		stdin.Close()
+		out, err := cmd.Output()
+		if err != nil {
+			med.pushError(err)
+			return
+		}
+		file.DotChange(out)
+	}
+	med.dialog2 = &Dialog2{
+		prompt: "sed",
+		file:   &File{},
+		finish: finish,
+	}
+	med.mode = DialogMode
+}
+
+func dotOpenBelow(med *Med, file *File) {
+	file.DotOpenBelow(false)
+	med.mode = EditingMode
+}
+
+func dotOpenAbove(med *Med, file *File) {
+}
+
+// TMP
+//func markLines(med *Med, file *File) {
+	//med.selection.active = true
+	//med.selection.anchor = lineStart(file.text, med.selection.anchor)
+	//med.selection.point = med.selection.anchor + 50
+//}
+
+
 //// Command wrappers with extra functionality.
 
 func move(fn func(*Med, *File)) func(*Med, *File) {
@@ -298,7 +502,7 @@ func move(fn func(*Med, *File)) func(*Med, *File) {
 func wDialogUpdate(fn func(*Med, *File)) func(*Med, *File) {
 	return func(med *Med, file *File) {
 		fn(med, file)
-		med.dialog.update()
+		//med.dialog.update()
 	}
 }
 
@@ -327,14 +531,6 @@ func pointParagraphRight(med *Med, file *File) {
 }
 func pointParagraphLeft(med *Med, file *File) {
 	file.Goto(textParagraphPrev(file.text, file.point.off))
-}
-func pageDown(med *Med, file *File) {
-	file.view.PageDown(file.text)
-	pointToViewTop(med, file)
-}
-func pageUp(med *Med, file *File) {
-	file.view.PageUp(file.text)
-	pointToViewTop(med, file)
 }
 func pointTextStart(med *Med, file *File) {
 	file.point.TextStart(file.text)
@@ -423,48 +619,29 @@ func openAbove(med *Med, file *File) {
 	}
 	med.mode = EditingMode
 }
-func changeLineEnd(med *Med, file *File) {
-	med.clip = file.DeleteLineEnd()
-	med.mode = EditingMode
-}
-func changeLineStart(med *Med, file *File) {
-	med.clip = file.DeleteLineStart()
-	med.mode = EditingMode
-}
-func changeLine(med *Med, file *File) {
-	med.clip = file.DeleteLine(false)
-	med.mode = EditingMode
-}
-
-func leaveMark(med *Med, file *File) {
-	file.leaveMark()
-}
-func gotoMark(med *Med, file *File) {
-	file.gotoMark()
-}
 
 // Execute a function for every line of the selection.
 // The function takes a *File, start of line offset and its indentation offset.
 func (med *Med) mapSelectionRange(file *File, fn func(*File, int, int) int, cm bool) {
-	file.leaveMark()
-	if med.mode == SelectionMode {
-		off, end := med.selectionRange(file)
-		med.selection.point = off
-		for p := off; p < end; {
-			_, i := lineIndent(file.text, p)
-			file.Goto(p)
-			end += fn(file, p, i)
-			p = lineEnd(file.text, p) + 1
-		}
-		med.selection.anchor = end - 1
-		if cm {
-			med.mode = CommandMode
-		}
-	} else {
-		ls, i := lineIndent(file.text, file.point.off)
-		fn(file, ls, i)
-	}
-	file.gotoMark()
+	//file.leaveMark()
+	//if med.mode == SelectionMode {
+		//off, end := med.selectionRange(file)
+		//med.selection.point = off
+		//for p := off; p < end; {
+			//_, i := lineIndent(file.text, p)
+			//file.Goto(p)
+			//end += fn(file, p, i)
+			//p = lineEnd(file.text, p) + 1
+		//}
+		//med.selection.anchor = end - 1
+		//if cm {
+			//med.mode = CommandMode
+		//}
+	//} else {
+		//ls, i := lineIndent(file.text, file.point.off)
+		//fn(file, ls, i)
+	//}
+	//file.gotoMark()
 }
 func goComment(med *Med, file *File) {
 	comment := func(file *File, ls int, i int) int {
@@ -553,57 +730,60 @@ func viewToPointBottom(med *Med, file *File) {
 }
 
 func (med *Med) samExecute(file *File, addr *sam.Address, cmdList []*sam.Command) error {
-	dot := Dot{file.point.off, file.point.off}
-	if med.selection.active {
-		dot.start, dot.end = med.selectionRange(file)
-	}
-	// Address always takes effect, even though selection might be active.
-	if addr != nil {
-		dot.start, dot.end = file.samAddress(addr)
-		if addr.End != nil {
-			_, dot.end = file.samAddress(addr.End)
-		}
-		dot.end = max(dot.start, dot.end)
-	}
-	if len(cmdList) > 0 {
-		var err error
-		dot, err = file.samExecuteCommandList(cmdList, dot)
-		if err != nil {
-			return err
-		}
-		commandMode(med, file)
-	}
-	med.mode = SelectionMode
-	med.selection = Selection{true, CharSelection, dot.end, dot.start}
-	file.Goto(dot.end)
+	//dot := Dot{file.point.off, file.point.off}
+	//if med.selection.active {
+		//dot.start, dot.end = med.selectionRange(file)
+	//}
+	//// Address always takes effect, even though selection might be active.
+	//if addr != nil {
+		//dot.start, dot.end = file.samAddress(addr)
+		//if addr.End != nil {
+			//_, dot.end = file.samAddress(addr.End)
+		//}
+		//dot.end = max(dot.start, dot.end)
+	//}
+	//if len(cmdList) > 0 {
+		//var err error
+		//dot, err = file.samExecuteCommandList(cmdList, dot)
+		//if err != nil {
+			//return err
+		//}
+		//commandMode(med, file)
+	//}
+	//med.mode = SelectionMode
+	//med.selection = Selection{true, CharSelection, dot.end, dot.start}
+	//file.Goto(dot.end)
 	return nil
 }
 
 func samCommand(med *Med, file *File) {
-	update := func() {}
-	finish := func(cancel bool) {
-		if cancel || len(med.dialog.file.text) < 1 {
-			return
-		}
-		var p sam.Parser
-		p.Init(med.dialog.file.text)
-		addr, cmdList, err := p.Parse()
-		if err != nil {
-			med.pushError(err)
-			return
-		}
-		err = med.samExecute(file, addr, cmdList)
-		if err != nil {
-			med.pushError(err)
-			return
-		}
-	}
-	med.startDialog("sam", update, finish, Helm{})
+	//update := func() {}
+	//finish := func(cancel bool) {
+		//if cancel || len(med.dialog.file.text) < 1 {
+			//return
+		//}
+		//var p sam.Parser
+		//p.Init(med.dialog.file.text)
+		//addr, cmdList, err := p.Parse()
+		//if err != nil {
+			//med.pushError(err)
+			//return
+		//}
+		//err = med.samExecute(file, addr, cmdList)
+		//if err != nil {
+			//med.pushError(err)
+			//return
+		//}
+	//}
+	//med.startDialog("sam", update, finish, Helm{})
 }
 
 func commandMode(med *Med, file *File) {
 	med.mode = CommandMode
 	med.selection.active = false
+	// Reset dot.
+	med.selection.point = file.point.off
+	med.selection.anchor = file.point.off
 }
 func editingMode(med *Med, file *File) {
 	med.mode = EditingMode
@@ -682,25 +862,25 @@ func godoc(med *Med, file *File) {
 //// Dialog mode commands.
 
 func dialogPointRight(med *Med, file *File) {
-	med.dialog.file.point.Right(med.dialog.file.text, tabStop)
+	med.dialog2.file.point.Right(med.dialog.file.text, tabStop)
 }
 func dialogPointLeft(med *Med, file *File) {
-	med.dialog.file.point.Left(med.dialog.file.text, tabStop)
+	med.dialog2.file.point.Left(med.dialog.file.text, tabStop)
 }
 func dialogPointLineEnd(med *Med, file *File) {
-	med.dialog.file.point.LineEnd(med.dialog.file.text, tabStop)
+	med.dialog2.file.point.LineEnd(med.dialog.file.text, tabStop)
 }
 func dialogPointLineStart(med *Med, file *File) {
-	med.dialog.file.point.LineStart(med.dialog.file.text, false)
+	med.dialog2.file.point.LineStart(med.dialog.file.text, false)
 }
 func dialogDeleteChar(med *Med, file *File) {
-	med.dialog.file.DeleteChar()
+	med.dialog2.file.DeleteChar()
 }
 func dialogBackspace(med *Med, file *File) {
-	med.dialog.file.Backspace()
+	med.dialog2.file.Backspace()
 }
 func dialogClear(med *Med, file *File) {
-	med.dialog.file.Clear()
+	med.dialog2.file.Clear()
 }
 func helmRotate(d *Dialog, inc int) {
 	l := len(d.helm.data)
@@ -723,10 +903,11 @@ func dialogHelmPrev(med *Med, file *File) {
 	helmRotate(med.dialog, -1)
 }
 func dialogCancel(med *Med, file *File) {
-	med.dialog.finish(true)
+	med.dialog2.finish(true)
 }
 func dialogFinish(med *Med, file *File) {
-	med.dialog.finish(false)
+	//med.dialog.finish(false)
+	med.dialog2.finish(false)
 }
 
 func selectionMode(med *Med, file *File) {
@@ -782,13 +963,7 @@ func selectionChange(med *Med, file *File) {
 }
 
 func clipCopy(med *Med, file *File) {
-	if med.mode == SelectionMode {
-		off, end := med.selectionRange(file)
-		med.clip = append([]byte(nil), file.text[off:end]...)
-	} else {
-		med.clip = file.CopyLine()
-	}
-	commandMode(med, file)
+	med.clip = file.ClipCopy()
 }
 
 func clipPaste(med *Med, file *File) {
@@ -798,13 +973,14 @@ func clipPaste(med *Med, file *File) {
 }
 
 func clipCut(med *Med, file *File) {
-	if med.mode == SelectionMode {
-		off, end := med.selectionRange(file)
-		med.clip = file.Delete(off, end)
-	} else {
-		med.clip = file.DeleteLine(true)
-	}
-	commandMode(med, file)
+	file.DotDelete()
+	//if med.mode == SelectionMode {
+		//off, end := med.selectionRange(file)
+		//med.clip = file.Delete(off, end)
+	//} else {
+		//med.clip = file.DeleteLine(true)
+	//}
+	//commandMode(med, file)
 }
 
 func clipChange(med *Med, file *File) {
@@ -882,7 +1058,7 @@ func (med *Med) searchNext(file *File, forward bool) {
 		return
 	}
 	file.SearchNext(med.searchctx.last, forward)
-	med.selectionUpdate(file)
+	//med.selectionUpdate(file)
 	file.view.Adjust(file.text, file.point.off)
 }
 
@@ -983,8 +1159,9 @@ func (med *Med) statusLine(pline, px int) string {
 	if len(med.keyseq) > 0 {
 		ks = "|" + med.keyseq + "|"
 	}
-	return fmt.Sprintf("%s %1s %s  %d:%d %s",
-		m, e, file.name, pline, px, ks)
+	// TODO: DEBUG: Dot
+	return fmt.Sprintf("%s %1s %s  %d:%d %s dot<%d,%d>",
+		m, e, file.name, pline, px, ks, file.dot.start, file.dot.end)
 }
 
 // Whenever med.mode is set to ErrorMode, there is always at least one
@@ -1002,11 +1179,13 @@ func (med *Med) popError() {
 }
 
 func (med *Med) displayDialog(t *term.Term, y int) {
-	file := med.dialog.file
+	//file := med.dialog.file
+	file := med.dialog2.file
 	// Prompt.
 	t.MoveTo(y, 0)
 	theme["dialogPrompt"].Out(t)
-	t.Write([]byte(med.dialog.prompt))
+	//t.Write([]byte(med.dialog.prompt))
+	t.Write([]byte(med.dialog2.prompt))
 	theme["normal"].Out(t)
 	t.Write([]byte(" "))
 	// Before the point.
@@ -1085,6 +1264,7 @@ func main() {
 		file:      nil,
 		mode:      CommandMode,
 		dialog:    nil,
+		dialog2:   nil,
 		searchctx: nil,
 		selection: Selection{},
 		errors:    list.New(),
@@ -1111,6 +1291,14 @@ func main() {
 
 		var highlights []Highlight
 		var selections []Highlight
+		// TODO: TMP: For now...
+		med.selection.active = true
+		med.selection.point = file.dot.end
+		med.selection.anchor = file.dot.start
+		if file.dot.start == file.dot.end {
+			_, s := utf8.DecodeRune(file.text[file.dot.start:])
+			med.selection.anchor += s
+		}
 		if med.selection.active {
 			ss, se := med.selectionRange(file)
 			selections = append(selections, Highlight{ss, se, theme["selection"]})
@@ -1137,13 +1325,13 @@ func main() {
 			t.AttrReset()
 		}
 		t.MoveTo(file.view.height, 0)
-		if med.mode == DialogMode && med.dialog.helm.active {
-			med.displayHelm(t, file.view.height+1)
-		} else {
+		//if med.mode == DialogMode && med.dialog.helm.active {
+			//med.displayHelm(t, file.view.height+1)
+		//} else {
 			theme["status"].Out(t)
 			t.EraseEol()
 			t.Write([]byte(status))
-		}
+		//}
 		t.Flush()
 
 		n, _ := os.Stdin.Read(b)
@@ -1168,8 +1356,9 @@ func main() {
 				case EditingMode:
 					file.Insert(b[:n])
 				case DialogMode:
-					med.dialog.file.Insert(b[:n])
-					med.dialog.update()
+					//med.dialog.file.Insert(b[:n])
+					//med.dialog.update()
+					med.dialog2.file.Insert(b[:n])
 				}
 				med.keyseq = ""
 			}

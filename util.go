@@ -180,6 +180,19 @@ func textSearch(text []byte, what []byte, off int, forward bool) int {
 	return -1
 }
 
+func textSearch2(text []byte, what []byte, forward bool) int {
+	var i int
+	if what == nil || len(what) == 0 {
+		return -1
+	}
+	if forward {
+		i = bytes.Index(text, what)
+	} else {
+		i = bytes.LastIndex(text, what)
+	}
+	return i
+}
+
 func textInsert(text []byte, off int, what []byte) []byte {
 	return append(text[:off], append(what, text[off:]...)...)
 }
