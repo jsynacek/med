@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"container/list"
-	//"github.com/jsynacek/med/sam"
 	"io/ioutil"
 	"os"
 	"regexp"
-	//"strconv"
 	"unicode"
 	"unicode/utf8"
 )
@@ -40,20 +37,13 @@ type File struct {
 	name     string
 	path     string
 	modified bool
-	point    Point // TODO: Remove this in favour of Dot
-
 	dot      Dot
 	// Last search.
 	search   []byte
-
 	view     View
 	undos    *list.List
 	redos    *list.List
-	mark     Point
 	text     []byte
-	// TODO: Turn these into Options struct and pass it around from main to functions as needed.
-	// Options.
-	tabStop int
 }
 
 func NewFile(name, path string, text []byte) (file *File) {
@@ -90,10 +80,6 @@ func LoadFile(path string) (*File, error) {
 
 func SaveFile(path string, data []byte) error {
 	return ioutil.WriteFile(path, data, 0644)
-}
-
-func (file *File) Goto(off int) {
-       //file.point.Goto(file.text, off, file.tabStop)
 }
 
 // GotoLine is very expensive, but good enough for now.
@@ -182,29 +168,6 @@ func (file *File) Redo() {
 	//file.undos.PushFront(u)
 }
 
-// Insert the byte slice what in the current point position.
-// Does not create an undo record.
-func (file *File) insert(what []byte) {
-	file.text = textInsert(file.text, file.point.off, what)
-	l := len(what)
-	nl := bytes.Count(what, NL)
-	// Fix the mark.
-	if file.mark.off >= file.point.off {
-		file.mark.off += l
-		file.mark.line += nl
-		// This might be a performance hog when there are more marks...
-		file.mark.col = file.mark.Column(file.text, file.tabStop)
-	}
-	// Fix the view, as the edit could have potentially been done in front of it.
-	if file.point.off < file.view.start {
-		file.view.start += l
-	}
-	file.point.off += l
-	file.point.line += nl
-	file.point.col = file.point.Column(file.text, file.tabStop)
-	file.modified = true
-}
-
 func (file *File) DotIsEmpty() bool {
 	return file.dot.start == file.dot.end
 }
@@ -227,11 +190,6 @@ func (file *File) DotChange(what []byte) {
 	file.Insert(what)
 }
 
-// TODO: Figure out:
-// 1) Should Insert move dot? Or should it be moved elsewhere?
-//    NO, the callee should move it if needed.
-// 2) Should Insert set dot to what was inserted?
-// 3) If dot is not empty, its end should be always moved one back, as dot.end is always +1 *behind* the actual content.
 func (file *File) DotDuplicateBelow() {
 	if file.DotIsEmpty() {
 		return
@@ -390,33 +348,6 @@ func (file *File) Insert(what []byte) {
 	// TODO undo
 }
 
-func (file *File) CopyLine() (line []byte) {
-	ls, le := lineStart(file.text, file.point.off), lineEnd(file.text, file.point.off)
-	le = min(len(file.text), le+1)
-	line = append([]byte(nil), file.text[ls:le]...)
-	return
-}
-
-func (file *File) delete(start, end int) (what []byte) {
-	file.point.Goto(file.text, start, file.tabStop)
-	file.text, what = textDelete(file.text, start, end)
-	// Fix the mark.
-	if file.mark.off >= start && file.mark.off <= end {
-		file.mark = file.point
-	} else if file.mark.off > end {
-		file.mark.off -= len(what)
-		file.mark.line -= bytes.Count(what, NL)
-		file.mark.col = file.mark.Column(file.text, file.tabStop)
-	}
-	// Fix the view, as the edit could have potentially been done in front of it.
-	if file.view.start >= start && file.view.start < end {
-		file.view.start = start
-	} else if file.view.start > end {
-		file.view.start -= len(what)
-	}
-	file.modified = true
-	return
-}
 
 func (file *File) Delete(start, end int) (what []byte) {
 	start = max(0, start)
@@ -450,14 +381,6 @@ func (file *File) Backspace() {
 }
 
 func (file *File) Clear() {
-	//if len(file.text) == 0 {
-		//return
-	//}
-	//file.pushUndo(append([]byte(nil), file.text...), 0, false)
-	//file.point = Point{}
-	//file.mark = Point{}
-	//file.text = []byte("")
-	//file.modified = true
 }
 
 func (file *File) Save() error {
@@ -476,130 +399,3 @@ type Dot struct {
 	start, end int
 }
 
-//func (file *File) samAddress(addr *sam.Address) (start, end int) {
-	//switch addr.Type {
-	//case '0':
-		//start = 0
-	//case '$':
-		//start = len(file.text)
-		//end = start
-	//case '#':
-		//p := file.point
-		//c, _ := strconv.Atoi(addr.Arg)
-		//p.Goto(file.text, c, file.view.visual.tabStop)
-		//start = p.off
-		//end = start
-	//case 'l':
-		//p := file.point
-		//l, _ := strconv.Atoi(addr.Arg)
-		//p.GotoLine(file.text, l)
-		//start = p.off
-		//end = lineEnd(file.text, start) + 1
-	//case '/':
-		//arg := []byte(addr.Arg)
-		//if i := textSearch(file.text, arg, file.point.off, true); i >= 0 {
-			//start = i
-			//end = i + utf8.RuneCount(arg)
-		//}
-	//}
-	//return
-//}
-
-//func (file *File) samExecuteEdit(cmd *sam.Command, dot Dot) (Dot, int) {
-	//off := 0
-	//switch cmd.Name {
-	//case "d":
-		//file.Delete(dot.start, dot.end)
-		//dot.end = dot.start
-		//off = -len(cmd.Arg)
-	//case "a":
-		//file.Goto(dot.end)
-		//file.Insert([]byte(cmd.Arg))
-		//dot.start, dot.end = dot.end, dot.end+len(cmd.Arg)
-		//off = len(cmd.Arg)
-	//case "i":
-		//file.Goto(dot.start)
-		//file.Insert([]byte(cmd.Arg))
-		//dot.end = dot.start + len(cmd.Arg)
-		//off = len(cmd.Arg)
-	//case "c":
-		//file.Goto(dot.start)
-		//deleted := file.Delete(dot.start, dot.end)
-		//file.Insert([]byte(cmd.Arg))
-		//dot.end = dot.start + len(cmd.Arg)
-		//off = len(cmd.Arg) - len(deleted)
-	//}
-	//return dot, off
-//}
-
-//func (file *File) samExecuteX(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	//re, err := regexp.Compile(cmd.Arg)
-	//if err != nil {
-		//return dot, 0, err
-	//}
-	//p := dot.start
-	//matches := re.FindAllIndex(file.text[p:dot.end], -1)
-	//offset := 0
-	//for _, match := range matches {
-		//var off int
-		//dot.start, dot.end = p+match[0]+offset, p+match[1]+offset
-		//dot, off, err = file.samExecuteCommand(cmd.Next, dot)
-		//if err != nil {
-			//return dot, 0, err
-		//}
-		//offset += off
-	//}
-	//return dot, offset, nil
-//}
-
-//func (file *File) samExecuteCond(cmd *sam.Command, dot Dot, include bool) (Dot, int, error) {
-	//re, err := regexp.Compile(cmd.Arg)
-	//if err != nil {
-		//return dot, 0, err
-	//}
-	//var off int
-	//if include && re.Match(file.text[dot.start:dot.end]) {
-		//dot, off, err = file.samExecuteCommand(cmd.Next, dot)
-	//} else if !include && !re.Match(file.text[dot.start:dot.end]) {
-		//dot, off, err = file.samExecuteCommand(cmd.Next, dot)
-	//}
-	//return dot, off, err
-//}
-
-//func (file *File) samExecuteG(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	//return file.samExecuteCond(cmd, dot, true)
-//}
-
-//func (file *File) samExecuteV(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	//return file.samExecuteCond(cmd, dot, false)
-//}
-
-//func (file *File) samExecuteCommand(cmd *sam.Command, dot Dot) (Dot, int, error) {
-	//if cmd == nil {
-		//return dot, 0, nil
-	//}
-	//var err error
-	//var off int
-	//switch cmd.Name {
-	//case "d", "a", "i", "c":
-		//dot, off = file.samExecuteEdit(cmd, dot)
-	//case "x":
-		//dot, off, err = file.samExecuteX(cmd, dot)
-	//case "g":
-		//dot, off, err = file.samExecuteG(cmd, dot)
-	//case "v":
-		//dot, off, err = file.samExecuteV(cmd, dot)
-	//}
-	//return dot, off, err
-//}
-
-//func (file *File) samExecuteCommandList(cmdList []*sam.Command, dot Dot) (Dot, error) {
-	//var err error
-	//for _, cmd := range cmdList {
-		//dot, _, err = file.samExecuteCommand(cmd, dot)
-		//if err != nil {
-			//return dot, err
-		//}
-	//}
-	//return dot, nil
-//}

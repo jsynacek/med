@@ -159,7 +159,7 @@ func lineIndentText(text []byte, off int) []byte {
 }
 
 func textSearch(text []byte, what []byte, off int, forward bool) int {
-	if what == nil || len(what) == 0 {
+	if len(what) == 0 {
 		return -1
 	}
 	if forward {
@@ -182,7 +182,7 @@ func textSearch(text []byte, what []byte, off int, forward bool) int {
 
 func textSearch2(text []byte, what []byte, forward bool) int {
 	var i int
-	if what == nil || len(what) == 0 {
+	if len(what) == 0 {
 		return -1
 	}
 	if forward {
