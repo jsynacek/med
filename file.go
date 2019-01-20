@@ -43,6 +43,8 @@ type File struct {
 	point    Point // TODO: Remove this in favour of Dot
 
 	dot      Dot
+	// Last search.
+	search   []byte
 
 	view     View
 	undos    *list.List
@@ -94,26 +96,50 @@ func (file *File) Goto(off int) {
        //file.point.Goto(file.text, off, file.tabStop)
 }
 
+// GotoLine is very expensive, but good enough for now.
+// Line numbering is 1-based.
 func (file *File) GotoLine(l int) {
-       //file.point.Goto(file.text, off, file.tabStop)
+	p := 0
+	for ; p < len(file.text) && l > 1; l-- {
+		p = lineEnd(file.text, p) + 1
+	}
+	file.DotSet(p)
+	file.view.Adjust(file.text, file.dot.start)
 }
 
-func (file *File) SearchNext(what []byte, forward bool) {
-	//var off int
-	//if forward {
-		//off = file.point.off
-	//} else {
-		//off = max(0, file.point.off-1)
-	//}
-	//if i := textSearch(file.text, what, off, forward); i >= 0 {
-		//if forward {
-			//file.Goto(i + len(what))
-		//} else {
-			//file.Goto(i)
-		//}
-	//}
+// TODO: global search from the dot
+func (file *File) Search(what []byte, forward bool) {
+	var off int
+	if forward {
+		off = file.dot.end
+	} else {
+		off = max(0, file.dot.start-1)
+	}
+	if i := textSearch(file.text, what, off, forward); i >= 0 {
+		file.dot.start = i
+		file.dot.end = i + len(what)
+		file.view.Adjust(file.text, i)
+		file.search = append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
+	}
 }
 
+func (file *File) SearchNext(forward bool) {
+	if file.search == nil {
+		return
+	}
+	file.Search(file.search, forward)
+}
+
+func (file *File) SearchView(what []byte) {
+	p := file.view.start
+	if i := textSearch(file.text[p:file.view.end], what, 0, true); i >= 0 {
+		i += p
+		file.dot.start = i
+		file.dot.end = i + len(what)
+		file.view.Adjust(file.text, i)
+		file.search = append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
+	}
+}
 
 func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 	// Mini file (dialogs) doesn't use the undo stack.
@@ -183,10 +209,6 @@ func (file *File) DotIsEmpty() bool {
 	return file.dot.start == file.dot.end
 }
 
-func (file *File) DotReset() {
-	file.DotSet(file.view.start)
-}
-
 func (file *File) DotSet(pos int) {
 	file.dot.start = pos
 	file.dot.end = pos
@@ -203,6 +225,36 @@ func (file *File) DotDelete() {
 func (file *File) DotChange(what []byte) {
 	file.DotDelete()
 	file.Insert(what)
+}
+
+// TODO: Figure out:
+// 1) Should Insert move dot? Or should it be moved elsewhere?
+//    NO, the callee should move it if needed.
+// 2) Should Insert set dot to what was inserted?
+// 3) If dot is not empty, its end should be always moved one back, as dot.end is always +1 *behind* the actual content.
+func (file *File) DotDuplicateBelow() {
+	if file.DotIsEmpty() {
+		return
+	}
+	de := max(0, file.dot.end - 1)
+	clip := append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
+	file.DotSet(min(len(file.text), lineEnd(file.text, de) + 1))
+	file.DotInsert(clip, After)
+	file.dot.end += len(clip)
+}
+
+func (file *File) DotDuplicateAbove() {
+	if file.DotIsEmpty() {
+		return
+	}
+	clip := append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
+	ls := lineStart(file.text, file.dot.start)
+	if clip[len(clip)-1] != '\n' {
+		ls = lineStart(file.text, ls-1)
+	}
+	file.DotSet(lineStart(file.text, ls))
+	file.DotInsert(clip, After)
+	file.dot.end += len(clip)
 }
 
 func (file *File) DotOpenBelow(keepDot bool) { // TODO keepindent
@@ -229,6 +281,41 @@ func (file *File) MarkNextWord(expand bool) {
 	}
 }
 
+// If only regexp search could be used backwards...
+func (file *File) MarkPrevWord(expand bool) {
+	if file.dot.start == 0 {
+		return
+	}
+	ok := func(r rune) bool {
+		// This is what \w translates into.
+		return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
+	}
+	var r rune
+	var s int
+	p := file.dot.start
+	for p >= 0 {
+		r, s = utf8.DecodeLastRune(file.text[:p])
+		// Weird case where no valid word char is found.
+		if s == 0 {
+			return
+		}
+		if ok(r) {
+			break
+		}
+		p -= s
+	}
+	de := p
+	for p >= 0 {
+		r, s = utf8.DecodeLastRune(file.text[:p])
+		if !ok(r) {
+			break
+		}
+		p -= s
+	}
+	file.dot.start = p
+	file.dot.end = de
+}
+
 func (file *File) MarkNextLine(expand bool) {
 	ls := lineStart(file.text, file.dot.start)
 	le := lineEnd(file.text, ls) + 1
@@ -250,26 +337,36 @@ func (file *File) MarkNextLine(expand bool) {
 	}
 }
 
-// Insert the byte slice what in the current point position.
-// Insert is to be called from the main editor.
-func (file *File) Insert(what []byte) {
+type InsertOp int
+
+const (
+	After InsertOp = iota
+	Before
+	Replace
+)
+
+func (file *File) DotInsert(what []byte, op InsertOp) {
 	if len(what) == 0 {
 		return
 	}
-	if what[0] == '\r' {
-		what[0] = '\n'
+	var p int
+	switch op {
+	case After:
+		p = file.dot.end
+	case Before:
+		p = file.dot.start
+	case Replace:
 	}
-	r, _ := utf8.DecodeRune(what)
-	if unicode.IsPrint(r) || what[0] == '\n' || what[0] == '\t' {
-		if what[0] == '\r' {
-			what[0] = '\n'
-		}
-		// TODO: Remove this after dot works.
-		//file.pushUndo(what, file.point.off, true)
-		//file.insert(what)
-		file.text = textInsert(file.text, file.dot.end, what)
-		file.DotSet(file.dot.end + len(what))
-	}
+	file.text = textInsert(file.text, p, what)
+	file.modified = true
+}
+
+// Insert the byte slice what in the after the current dot and set the dot.
+// Insert is to be called from the main editor.
+func (file *File) Insert(what []byte) {
+	file.DotInsert(what, After)
+	file.DotSet(file.dot.end + len(what))
+	// TODO undo
 }
 
 func (file *File) CopyLine() (line []byte) {

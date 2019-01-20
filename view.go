@@ -71,7 +71,7 @@ func (view *View) AdjustToPoint(text []byte, point int) {
 
 func (view *View) Adjust(text []byte, point int) {
 	if point >= view.end || point < view.start {
-		view.ToPoint(text, point, view.height/3)
+		view.ToPoint(text, point, view.height/5)
 	}
 }
 

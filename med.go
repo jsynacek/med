@@ -86,7 +86,6 @@ type Med struct {
 	mode      int
 	dialog    *Dialog
 	dialog2   *Dialog2
-	lastsearch []byte
 	searchctx *SearchContext
 	selection Selection
 	errors    *list.List
@@ -149,24 +148,27 @@ var commandModeKeymap = joinKeybinds(
 		{"i", viewScrollUp},
 		{"K", viewScrollPageDown},
 		{"I", viewScrollPageUp},
-		{";", searchViewForward},
+		{"n", searchForward},
+		{"N", searchBackward},
+		{";", searchView},
 		//{"]", markLines},
 		{"o", searchNextForward2},
 		{"u", searchNextBackward2},
 
-		{"f", dotAppend},
-		{"F", dotAppendLineEnd},
-		{"a", dotInsert},
-		{"A", dotInsertLineStart},
-		{"c", dotChange},
+		{"f", dotInsertAfter},
+		{"F", dotInsertBefore},
+		{",f", dotChange},
 		{"|", dotPipe},
-		{"r", dotReset},
 
+		{"e", dotDuplicateBelow},
+		{"E", dotDuplicateAbove},
+		//{"?", dotInsertLineEnd}, == openLineEnd
+		//{"?", dotInsertLineStart}, == openLineStart
 		{"sk", dotOpenBelow},
-		//{"sk", dotOpenBelow},
 		{"si", dotOpenAbove},
 
 		{kAlt("l"), selectNextWord},
+		{kAlt("j"), selectPrevWord},
 		{kAlt("k"), selectNextLine},
 		{kAlt("K"), selectNextLineExpand},
 		//{"mw", selectWord},
@@ -179,7 +181,7 @@ var commandModeKeymap = joinKeybinds(
 		//{"o", searchNextForward},
 		//{"u", searchNextBackward},
 		//{"h", searchCurrentWord},
-		//{" l", gotoLine},
+		{" l", gotoLine},
 		//{"/", gotoMatchingBracket},
 		{"y", clipCopy},
 		{"v", clipPaste},
@@ -244,8 +246,8 @@ var selectionModeKeymap = joinKeybinds(
 		{" gj", goUnindent},
 		{"m", selectionChange},
 		{"s", selectionSwapEnd},
-		{"n", searchForward},
-		{"N", searchBackward},
+		//{"n", searchForward},
+		//{"N", searchBackward},
 		{"o", searchNextForward},
 		{"u", searchNextBackward},
 		{" n", selectionSearch},
@@ -341,84 +343,80 @@ func viewScrollPageUp(med *Med, file *File) {
 	}
 }
 
-// DotReset(pos int) -- reset the dot(selection) to the position and make it zero-length
-// DotRange() -- selectionRange
-// ...
-
-//func searchCommon(text []byte, what []byte, forward bool) int {
-//}
-
-// TODO: Refactor this mess.
-func searchViewForward(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		med.lastsearch = append([]byte(nil), med.dialog2.file.text...)
-		if i := textSearch2(file.text[file.view.start:file.view.end], med.dialog2.file.text, true); i >= 0 {
-			i += file.view.start
-			end := i + len(med.dialog2.file.text)
-			file.dot.start = i
-			file.dot.end = end
-		}
-	}
+func (med *Med) searchDialog(prompt string, finish finishFunc) {
 	med.dialog2 = &Dialog2{
-		prompt: "search view",
+		prompt: prompt,
 		file:   &File{},
 		finish: finish,
 	}
 	med.mode = DialogMode
 }
 
+func searchForward(med *Med, file *File) {
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		if cancel {
+			return
+		}
+		file.Search(med.dialog2.file.text, true)
+	}
+	med.searchDialog("search →", finish)
+}
+
+func searchBackward(med *Med, file *File) {
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		if cancel {
+			return
+		}
+		file.Search(med.dialog2.file.text, false)
+	}
+	med.searchDialog("search ←", finish)
+}
+
+func searchView(med *Med, file *File) {
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		if cancel {
+			return
+		}
+		file.SearchView(med.dialog2.file.text)
+	}
+	med.searchDialog("search ←", finish)
+}
+
 func searchNextForward2(med *Med, file *File) {
-	if med.lastsearch == nil {
-		return
-	}
-	_, se := med.selectionRange(file)
-	if i := textSearch2(file.text[se:], med.lastsearch, true); i >= 0 {
-		i += se
-		end := i + len(med.dialog2.file.text)
-		file.dot.start = i
-		file.dot.end = end
-		file.view.Adjust(file.text, end)
-	}
+	file.SearchNext(true)
 }
 
 func searchNextBackward2(med *Med, file *File) {
-	if med.lastsearch == nil {
-		return
-	}
-	ss, _ := med.selectionRange(file)
-	if i := textSearch2(file.text[:ss], med.lastsearch, false); i >= 0 {
-		end := i + len(med.dialog2.file.text)
-		file.dot.start = i
-		file.dot.end = end
-		file.view.Adjust(file.text, i)
-	}
+	file.SearchNext(false)
 }
 
-func dotAppend(med *Med, file *File) {
-	_, se := med.selectionRange(file)
-	file.DotSet(se)
+func dotInsertAfter(med *Med, file *File) {
+	file.DotSet(file.dot.end)
 	med.selection.active = false
 	med.mode = EditingMode
 }
 
-func dotAppendLineEnd(med *Med, file *File) {
-	_, se := med.selectionRange(file)
-	file.DotSet(lineEnd(file.text, se))
-	med.selection.active = false
-	med.mode = EditingMode
+func dotInsertLineEnd(med *Med, file *File) {
+	// TODO
+	//_, se := med.selectionRange(file)
+	//file.DotSet(lineEnd(file.text, se))
+	//med.selection.active = false
+	//med.mode = EditingMode
 }
 
-func dotInsert(med *Med, file *File) {
-	ss, _ := med.selectionRange(file)
-	file.Goto(ss)
+func dotInsertBefore(med *Med, file *File) {
+	file.DotSet(file.dot.start)
 	med.selection.active = false
 	med.mode = EditingMode
 }
 
 func dotInsertLineStart(med *Med, file *File) {
-	file.DotSet(lineStart(file.text, file.dot.start))
-	med.mode = EditingMode
+	// TODO
+	//file.DotSet(lineStart(file.text, file.dot.start))
+	//med.mode = EditingMode
 }
 
 func dotChange(med *Med, file *File) {
@@ -427,13 +425,12 @@ func dotChange(med *Med, file *File) {
 	med.mode = EditingMode
 }
 
-// TODO: This is probably not needed...
-func dotReset(med *Med, file *File) {
-	file.DotReset()
-}
-
 func selectNextWord(med *Med, file *File) {
 	file.MarkNextWord(false)
+}
+
+func selectPrevWord(med *Med, file *File) {
+	file.MarkPrevWord(false)
 }
 
 func selectNextLine(med *Med, file *File) {
@@ -469,6 +466,14 @@ func dotPipe(med *Med, file *File) {
 		finish: finish,
 	}
 	med.mode = DialogMode
+}
+
+func dotDuplicateBelow(med *Med, file *File) {
+	file.DotDuplicateBelow()
+}
+
+func dotDuplicateAbove(med *Med, file *File) {
+	file.DotDuplicateAbove()
 }
 
 func dotOpenBelow(med *Med, file *File) {
@@ -538,12 +543,12 @@ func pointTextStart(med *Med, file *File) {
 func pointTextEnd(med *Med, file *File) {
 	file.point.TextEnd(file.text, tabStop)
 }
-func searchForward(med *Med, file *File) {
-	med.search(file, true)
-}
-func searchBackward(med *Med, file *File) {
-	med.search(file, false)
-}
+//func searchForward(med *Med, file *File) {
+	//med.search(file, true)
+//}
+//func searchBackward(med *Med, file *File) {
+	//med.search(file, false)
+//}
 func searchNextForward(med *Med, file *File) {
 	med.searchNext(file, true)
 }
@@ -556,21 +561,23 @@ func searchCurrentWord(med *Med, file *File) {
 }
 
 func gotoLine(med *Med, file *File) {
-	med.searchctx = &SearchContext{point: file.point, view: file.view}
-	update := func() {
-		l, err := strconv.Atoi(string(med.dialog.file.text))
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		if cancel {
+			return
+		}
+		l, err := strconv.Atoi(string(med.dialog2.file.text))
 		if err == nil {
 			file.GotoLine(l)
-		} else {
-			med.restoreSearchContext(file)
 		}
 	}
-	finish := func(cancel bool) {
-		if cancel {
-			med.restoreSearchContext(file)
-		}
+	med.dialog2 = &Dialog2{
+		prompt: "goto line",
+		file:   &File{},
+		finish: finish,
 	}
-	med.startDialog("goto line", update, finish, Helm{})
+	med.mode = DialogMode
+
 }
 func gotoMatchingBracket(med *Med, file *File) {
 	for _, pair := range []string{"()", "[]", "{}"} {
@@ -926,7 +933,7 @@ func selectionSearch(med *Med, file *File) {
 		view:  file.view,
 		last:  append([]byte(nil), file.text[off:end]...),
 	}
-	file.SearchNext(med.searchctx.last, true)
+	//file.SearchNext(med.searchctx.last, true)
 }
 
 func selectWord(med *Med, file *File) {
@@ -1057,7 +1064,7 @@ func (med *Med) searchNext(file *File, forward bool) {
 	if med.searchctx == nil || len(med.searchctx.last) == 0 {
 		return
 	}
-	file.SearchNext(med.searchctx.last, forward)
+	//file.SearchNext(med.searchctx.last, forward)
 	//med.selectionUpdate(file)
 	file.view.Adjust(file.text, file.point.off)
 }
@@ -1308,7 +1315,7 @@ func main() {
 			highlights = getSyntax(file.text, file.view.start, file.view.height)
 		}
 		// TODO: Redraw only when cursor moves off screen or on insert/delete.
-		file.view.DisplayText(t, file.text, file.point.off, selections, highlights)
+		file.view.DisplayText(t, file.text, file.dot.end, selections, highlights)
 
 		px := file.point.Column(file.text, tabStop)
 		pl := file.point.line
