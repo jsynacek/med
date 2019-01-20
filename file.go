@@ -237,17 +237,19 @@ func (file *File) ClipCopy() []byte {
 
 var wordRe = regexp.MustCompile(`\w+`)
 
-func (file *File) MarkNextWord(expand bool) {
+func (file *File) SelectNextWord(expand bool) {
 	p := min(len(file.text), file.dot.end)
 	loc := wordRe.FindIndex(file.text[p:])
 	if loc != nil {
-		file.dot.start = loc[0] + p
+		if !expand {
+			file.dot.start = loc[0] + p
+		}
 		file.dot.end = loc[1] + p
 	}
 }
 
 // If only regexp search could be used backwards...
-func (file *File) MarkPrevWord(expand bool) {
+func (file *File) SelectPrevWord(expand bool) {
 	if file.dot.start == 0 {
 		return
 	}
@@ -278,10 +280,12 @@ func (file *File) MarkPrevWord(expand bool) {
 		p -= s
 	}
 	file.dot.start = p
-	file.dot.end = de
+	if !expand {
+		file.dot.end = de
+	}
 }
 
-func (file *File) MarkNextLine(expand bool) {
+func (file *File) SelectNextLine(expand bool) {
 	ls := lineStart(file.text, file.dot.start)
 	le := lineEnd(file.text, ls) + 1
 	// If expansion is required, simply move the dot end.
@@ -295,6 +299,24 @@ func (file *File) MarkNextLine(expand bool) {
 		if le < len(file.text) {
 			file.dot.start = le
 			file.dot.end = lineEnd(file.text, le) + 1
+		}
+	} else {
+		file.dot.start = ls
+		file.dot.end = le
+	}
+}
+
+func (file *File) SelectPrevLine(expand bool) {
+	ls := lineStart(file.text, file.dot.start)
+	le := lineEnd(file.text, ls) + 1
+	if expand {
+		if ls > 0 {
+			file.dot.start = lineStart(file.text, ls-1)
+		}
+	} else if ls == file.dot.start && le == file.dot.end {
+		if ls > 0 {
+			file.dot.start = lineStart(file.text, ls-1)
+			file.dot.end = ls
 		}
 	} else {
 		file.dot.start = ls

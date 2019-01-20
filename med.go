@@ -107,9 +107,13 @@ var commandModeKeymap = joinKeybinds(
 		{"si", dotOpenAbove},
 
 		{kAlt("l"), selectNextWord},
+		{kAlt("L"), selectNextWordExpand},
 		{kAlt("j"), selectPrevWord},
+		{kAlt("J"), selectPrevWordExpand},
 		{kAlt("k"), selectNextLine},
 		{kAlt("K"), selectNextLineExpand},
+		{kAlt("i"), selectPrevLine},
+		{kAlt("I"), selectPrevLineExpand},
 		{"ml", selectLineEnd},
 		{"mj", selectLineStart},
 		//{"mw", selectWord},
@@ -265,19 +269,35 @@ func dotChange(med *Med, file *File) {
 }
 
 func selectNextWord(med *Med, file *File) {
-	file.MarkNextWord(false)
+	file.SelectNextWord(false)
+}
+
+func selectNextWordExpand(med *Med, file *File) {
+	file.SelectNextWord(true)
 }
 
 func selectPrevWord(med *Med, file *File) {
-	file.MarkPrevWord(false)
+	file.SelectPrevWord(false)
+}
+
+func selectPrevWordExpand(med *Med, file *File) {
+	file.SelectPrevWord(true)
 }
 
 func selectNextLine(med *Med, file *File) {
-	file.MarkNextLine(false)
+	file.SelectNextLine(false)
 }
 
 func selectNextLineExpand(med *Med, file *File) {
-	file.MarkNextLine(true)
+	file.SelectNextLine(true)
+}
+
+func selectPrevLine(med *Med, file *File) {
+	file.SelectPrevLine(false)
+}
+
+func selectPrevLineExpand(med *Med, file *File) {
+	file.SelectPrevLine(true)
 }
 
 func selectLineEnd(med *Med, file *File) {
@@ -355,6 +375,7 @@ func gotoLine(med *Med, file *File) {
 
 }
 func insertNewline(med *Med, file *File) {
+	file.Insert(NL)
 }
 func backspace(med *Med, file *File) {
 	file.Backspace()
@@ -478,20 +499,6 @@ func clipPasteChange(med *Med, file *File) {
 func clipCut(med *Med, file *File) {
 	med.clip = append([]byte(nil), file.DotText()...)
 	file.DotDelete()
-}
-
-func clipChange(med *Med, file *File) {
-	off, end := med.selectionRange(file)
-	med.clip = file.Delete(off, end)
-	med.mode = EditingMode
-	med.selection.active = false
-}
-
-func (med *Med) selectionUpdate(file *File) {
-}
-
-func (med *Med) selectionRange(file *File) (start, end int) {
-	return
 }
 
 func (med *Med) load() {
