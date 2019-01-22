@@ -32,14 +32,17 @@ type Undo struct {
 	isInsert bool
 }
 
+type Dot struct {
+	start, end int
+}
+
 // File represents a real file loaded into memory.
 type File struct {
 	name     string
 	path     string
 	modified bool
 	dot      Dot
-	// Last search.
-	search   []byte
+	search   []byte // Last search.
 	view     View
 	undos    *list.List
 	redos    *list.List
@@ -142,6 +145,10 @@ func (file *File) ViewToDot() {
 	file.view.ToPoint(file.text, file.dot.start, file.view.height/5)
 }
 
+func (file *File) ViewAdjust() {
+	file.view.Adjust(file.text, file.dot.start)
+}
+
 func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 	// Mini file (dialogs) doesn't use the undo stack.
 	if file.undos == nil {
@@ -209,9 +216,9 @@ func (file *File) DotDuplicateBelow() {
 	if file.DotIsEmpty() {
 		return
 	}
-	de := max(0, file.dot.end - 1)
+	de := max(0, file.dot.end-1)
 	clip := append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
-	file.DotSet(min(len(file.text), lineEnd(file.text, de) + 1))
+	file.DotSet(min(len(file.text), lineEnd(file.text, de)+1))
 	file.DotInsert(clip, After, true)
 }
 
@@ -469,8 +476,3 @@ func (file *File) Save() error {
 	file.modified = false
 	return nil
 }
-
-type Dot struct {
-	start, end int
-}
-

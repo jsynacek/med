@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/jsynacek/med/term"
@@ -28,6 +29,8 @@ var (
 	smartLineStart   = true
 	showVisuals      = false
 	showSyntax       = false
+	helmCols         = 60
+	helmRows         = 15
 )
 
 type updateFunc func()
@@ -37,6 +40,8 @@ type completeFunc func()
 type Dialog struct {
 	prompt string
 	file   *File
+	helm   *Helm
+	update updateFunc
 	finish finishFunc
 }
 
@@ -51,7 +56,7 @@ type Med struct {
 	files     *list.List
 	file      *list.Element
 	mode      int
-	dialog   *Dialog
+	dialog    *Dialog
 	selection Selection
 	errors    *list.List
 	keyseq    string
@@ -131,6 +136,7 @@ var commandModeKeymap = joinKeybinds(
 		//{"mw", selectWord},
 		//{"ms", selectString},
 		//{"md", selectBlock},
+		{"gs", goGotoSymbol},
 
 
 		{" l", gotoLine},
@@ -163,6 +169,7 @@ var editingModeKeymap = joinKeybinds(
 	[]Keybind{
 		{kAlt(" "), commandMode},
 		{kEnter, insertNewline},
+		{kAlt("l"), insertNewlineInPlace},
 		{kDelete, deleteChar},
 		{kBackspace, backspace},
 	},
@@ -178,6 +185,8 @@ var dialogModeKeymap = []Keybind{
 	{kDelete, dialogDeleteChar},
 	{kBackspace, dialogBackspace},
 	{kCtrl("u"), dialogClear},
+	{kAlt("k"), dialogNextItem},
+	{kAlt("i"), dialogPrevItem},
 	{kEnter, dialogFinish},
 }
 
@@ -277,13 +286,13 @@ func searchNextBackward2(med *Med, file *File) {
 
 func dotInsertAfter(med *Med, file *File) {
 	file.DotSet(file.dot.end)
-	file.ViewToDot()
+	file.ViewAdjust()
 	med.mode = EditingMode
 }
 
 func dotInsertBefore(med *Med, file *File) {
 	file.DotSet(file.dot.start)
-	file.ViewToDot()
+	file.ViewAdjust()
 	med.mode = EditingMode
 }
 
@@ -359,6 +368,43 @@ func selectNextBraces(med *Med, file *File) {
 
 func selectPrevBraces(med *Med, file *File) {
 	file.SelectPrevBlock("{", "}", false)
+}
+
+func goGotoSymbol(med *Med, file *File) {
+	helm, err := goGrepSymbol("^(func|type|var) ", file.path)
+	if err != nil {
+		med.pushError(err)
+		return
+	}
+	helm.label = "go symbol"
+
+	update := func() {
+		helm.Update(med.dialog.file.text)
+	}
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		if cancel {
+			return
+		}
+		item := helm.Item()
+		if item != nil {
+			// egrep output format is 'file:linenumber:match'
+			line, err := strconv.Atoi(strings.SplitN(item.data, ":", 3)[1])
+			if err != nil {
+				med.pushError(err)
+			} else {
+				file.GotoLine(line)
+			}
+		}
+	}
+	med.dialog = &Dialog{
+		prompt: helm.label,
+		file:   &File{},
+		helm:   helm,
+		update: update,
+		finish: finish,
+	}
+	med.mode = DialogMode
 }
 
 // helper, move somewhere
@@ -464,6 +510,9 @@ func gotoLine(med *Med, file *File) {
 func insertNewline(med *Med, file *File) {
 	file.Insert(NL)
 }
+func insertNewlineInPlace(med *Med, file *File) {
+	file.DotInsert(NL, After, false)
+}
 func backspace(med *Med, file *File) {
 	file.Backspace()
 }
@@ -538,6 +587,8 @@ func closeBuffer(med *Med, file *File) {
 
 //// Dialog mode commands.
 
+// TODO: Replace dialog.file with a simple string and implement those few editing functions just for it...
+
 func dialogPointRight(med *Med, file *File) {
 }
 func dialogPointLeft(med *Med, file *File) {
@@ -548,18 +599,37 @@ func dialogPointLineStart(med *Med, file *File) {
 }
 func dialogDeleteChar(med *Med, file *File) {
 	med.dialog.file.DeleteChar()
+	if med.dialog.helm != nil {
+		med.dialog.update()
+	}
 }
 func dialogBackspace(med *Med, file *File) {
 	med.dialog.file.Backspace()
+	if med.dialog.helm != nil {
+		med.dialog.update()
+	}
 }
 func dialogClear(med *Med, file *File) {
 	med.dialog.file.Clear()
+	if med.dialog.helm != nil {
+		med.dialog.update()
+	}
 }
 func dialogCancel(med *Med, file *File) {
 	med.dialog.finish(true)
 }
 func dialogFinish(med *Med, file *File) {
 	med.dialog.finish(false)
+}
+func dialogNextItem(med *Med, file *File) {
+	if med.dialog.helm != nil {
+		med.dialog.helm.Next()
+	}
+}
+func dialogPrevItem(med *Med, file *File) {
+	if med.dialog.helm != nil {
+		med.dialog.helm.Prev()
+	}
 }
 
 func clipCopy(med *Med, file *File) {
@@ -733,6 +803,10 @@ func main() {
 		// TODO: Redraw only when cursor moves off screen or on insert/delete.
 		file.view.DisplayText(t, file.text, file.dot.end, selections, highlights)
 
+		if med.mode == DialogMode && med.dialog.helm != nil {
+			med.dialog.helm.Display(t, (file.view.height-helmRows)/5, (file.view.width-helmCols)/2)
+		}
+
 		t.AttrReset()
 		status := med.statusLine()
 		if med.mode == DialogMode {
@@ -774,6 +848,9 @@ func main() {
 					file.Insert(b[:n])
 				case DialogMode:
 					med.dialog.file.Insert(b[:n])
+					if med.dialog.helm != nil {
+						med.dialog.update()
+					}
 				}
 				med.keyseq = ""
 			}
