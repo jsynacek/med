@@ -206,6 +206,38 @@ func textDelete(text []byte, off int, to int) ([]byte, []byte) {
 	return append(text[:off], text[to:]...), c
 }
 
+// TODO: Put all text objects here. Include line, whitespace stretch, word, WORD, number,...
+//       anything that can be found in plain text without language support.
+
+func textNextLine(text []byte, off int) (start int, end int, ok bool) {
+	if off < 0 || off >= len(text) {
+		return
+	}
+	ls := bytes.Index(text[off:], NL)
+	if ls >= 0 {
+		ls += off + 1
+		le := bytes.Index(text[ls:], NL)
+		if le >= 0 {
+			return ls, le+ls+1, true
+		}
+	}
+	return
+}
+
+func textPrevLine(text []byte, off int) (start int, end int, ok bool) {
+	if off < 0 || off > len(text) {
+		return
+	}
+	le := bytes.LastIndex(text[:off], NL)
+	if le >= 0 {
+		ls := bytes.LastIndex(text[:le], NL)
+		if le >= 0 {
+			return ls+1, le+1, true
+		}
+	}
+	return
+}
+
 func textMatchingBracket(text []byte, off int, left string, right string) (i int, ok bool) {
 	if off < 0 || off >= len(text) {
 		return
@@ -240,6 +272,31 @@ func textMatchingBracket(text []byte, off int, left string, right string) (i int
 			}
 			p -= s
 		}
+	}
+	return
+}
+
+// textNextBlock searches to the right for the next sequence of bytes delimited by left and right.
+// If such delimited sequence was found, ok is set to true.
+func textNextBlock(text []byte, off int, left string, right string) (start int, end int, ok bool) {
+	if off < 0 || off >= len(text) {
+		return
+	}
+	start = bytes.Index(text[off:], []byte(left))
+	if start >= 0 {
+		start += off
+		end, ok = textMatchingBracket(text, start, left, right)
+	}
+	return
+}
+
+func textPrevBlock(text []byte, off int, left string, right string) (start int, end int, ok bool) {
+	if off < 0 || off > len(text) {
+		return
+	}
+	end = bytes.LastIndex(text[:off], []byte(right))
+	if end >= 0 {
+		start, ok = textMatchingBracket(text, end, left, right)
 	}
 	return
 }

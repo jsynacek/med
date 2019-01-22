@@ -127,6 +127,21 @@ func (file *File) SearchView(what []byte) {
 	}
 }
 
+func (file *File) SearchDot(what []byte) {
+	p := file.dot.start
+	if i := textSearch(file.text[p:file.dot.end], what, 0, true); i >= 0 {
+		i += p
+		file.dot.start = i
+		file.dot.end = i + len(what)
+		file.view.Adjust(file.text, i)
+		file.search = append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
+	}
+}
+
+func (file *File) ViewToDot() {
+	file.view.ToPoint(file.text, file.dot.start, file.view.height/5)
+}
+
 func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 	// Mini file (dialogs) doesn't use the undo stack.
 	if file.undos == nil {
@@ -187,7 +202,7 @@ func (file *File) DotDelete() {
 
 func (file *File) DotChange(what []byte) {
 	file.DotDelete()
-	file.Insert(what)
+	file.DotInsert(what, After, true)
 }
 
 func (file *File) DotDuplicateBelow() {
@@ -211,6 +226,18 @@ func (file *File) DotDuplicateAbove() {
 	}
 	file.DotSet(lineStart(file.text, ls))
 	file.DotInsert(clip, After, true)
+}
+
+// EmptyLineBelow inserts an empty line below the current dot without moving the dot.
+func (file *File) EmptyLineBelow() {
+	file.text = textInsert(file.text, lineEnd(file.text, file.dot.end), NL)
+}
+
+// EmptyLineAbove inserts an empty line above the current dot without moving the dot.
+func (file *File) EmptyLineAbove() {
+	file.text = textInsert(file.text, lineStart(file.text, file.dot.start), NL)
+	file.dot.start++
+	file.dot.end++
 }
 
 func (file *File) DotOpenBelow() {
@@ -297,12 +324,10 @@ func (file *File) SelectNextLine(expand bool) {
 	// depending on the state of the dot.
 	} else if ls == file.dot.start && le == file.dot.end {
 		if le < len(file.text) {
-			file.dot.start = le
-			file.dot.end = lineEnd(file.text, le) + 1
+			file.dot.start, file.dot.end = le, lineEnd(file.text, le) + 1
 		}
 	} else {
-		file.dot.start = ls
-		file.dot.end = le
+		file.dot.start, file.dot.end = ls, le
 	}
 }
 
@@ -315,12 +340,10 @@ func (file *File) SelectPrevLine(expand bool) {
 		}
 	} else if ls == file.dot.start && le == file.dot.end {
 		if ls > 0 {
-			file.dot.start = lineStart(file.text, ls-1)
-			file.dot.end = ls
+			file.dot.start, file.dot.end = lineStart(file.text, ls-1), ls
 		}
 	} else {
-		file.dot.start = ls
-		file.dot.end = le
+		file.dot.start, file.dot.end = ls, le
 	}
 }
 
@@ -330,6 +353,36 @@ func (file *File) SelectLineEnd() {
 
 func (file *File) SelectLineStart() {
 	file.dot.start = lineStart(file.text, file.dot.start)
+}
+
+func (file *File) SelectNextBlock(left string, right string, includeDelims bool) {
+	bs, be, ok := textNextBlock(file.text, file.dot.end, left, right)
+	if ok {
+		if includeDelims {
+			be += len(right)
+		} else {
+			bs += len(left)
+		}
+		file.dot.start, file.dot.end = bs, be
+		file.view.Adjust(file.text, file.dot.start)
+	}
+}
+
+func (file *File) SelectPrevBlock(left string, right string, includeDelims bool) {
+	bs, be, ok := textPrevBlock(file.text, file.dot.start-1, left, right)
+	if ok {
+		if includeDelims {
+			be += len(right)
+		} else {
+			bs += len(left)
+		}
+		file.dot.start, file.dot.end = bs, be
+		file.view.Adjust(file.text, file.dot.start)
+	}
+}
+
+func (file *File) SelectAll() {
+	file.dot.start, file.dot.end = 0, len(file.text)
 }
 
 type InsertOp int

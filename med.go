@@ -87,19 +87,23 @@ var commandModeKeymap = joinKeybinds(
 	[]Keybind{
 		{"k", viewScrollPageDown},
 		{"i", viewScrollPageUp},
+		{"z", viewScrollAdjust},
 		{"K", viewScrollDown},
 		{"I", viewScrollUp},
 		{"n", searchForward},
 		{"N", searchBackward},
 		{";", searchView},
-		//{"]", markLines},
+		{".", searchDot},
 		{"o", searchNextForward2},
 		{"u", searchNextBackward2},
 
 		{"f", dotInsertAfter},
 		{"F", dotInsertBefore},
-		{",f", dotChange},
+		{"r", dotChange},
 		{"|", dotPipe},
+		{"&", dotSed},
+		{"wk", dotEmptyLineBelow},
+		{"wi", dotEmptyLineAbove},
 
 		{"e", dotDuplicateBelow},
 		{"E", dotDuplicateAbove},
@@ -116,17 +120,24 @@ var commandModeKeymap = joinKeybinds(
 		{kAlt("I"), selectPrevLineExpand},
 		{"ml", selectLineEnd},
 		{"mj", selectLineStart},
+		{"ma", selectAll},
+
+		{")", selectNextParens},
+		{"(", selectPrevParens},
+		{"]", selectNextBrackets},
+		{"[", selectPrevBrackets},
+		{"}", selectNextBraces},
+		{"{", selectPrevBraces},
 		//{"mw", selectWord},
 		//{"ms", selectString},
 		//{"md", selectBlock},
 
 
-		//{"h", searchCurrentWord},
 		{" l", gotoLine},
 		{"c", clipCopy},
 		{"v", clipPasteAfter},
 		{"V", clipPasteBefore},
-		{",v", clipPasteChange},
+		{"R", clipPasteChange},
 		{"x", clipCut},
 		//{"y", undo},
 		//{"Y", redo},
@@ -199,6 +210,9 @@ func viewScrollPageUp(med *Med, file *File) {
 		file.view.ScrollUp(file.text)
 	}
 }
+func viewScrollAdjust(med *Med, file *File) {
+	file.ViewToDot()
+}
 
 func (med *Med) searchDialog(prompt string, finish finishFunc) {
 	med.dialog = &Dialog{
@@ -242,6 +256,17 @@ func searchView(med *Med, file *File) {
 	med.searchDialog("view search →", finish)
 }
 
+func searchDot(med *Med, file *File) {
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		if cancel {
+			return
+		}
+		file.SearchDot(med.dialog.file.text)
+	}
+	med.searchDialog("dot search →", finish)
+}
+
 func searchNextForward2(med *Med, file *File) {
 	file.SearchNext(true)
 }
@@ -252,13 +277,13 @@ func searchNextBackward2(med *Med, file *File) {
 
 func dotInsertAfter(med *Med, file *File) {
 	file.DotSet(file.dot.end)
-	med.selection.active = false
+	file.ViewToDot()
 	med.mode = EditingMode
 }
 
 func dotInsertBefore(med *Med, file *File) {
 	file.DotSet(file.dot.start)
-	med.selection.active = false
+	file.ViewToDot()
 	med.mode = EditingMode
 }
 
@@ -308,19 +333,73 @@ func selectLineStart(med *Med, file *File) {
 	file.SelectLineStart()
 }
 
-// TODO: sed for now
+func selectAll(med *Med, file *File) {
+	file.SelectAll()
+}
+
+func selectNextParens(med *Med, file *File) {
+	file.SelectNextBlock("(", ")", false)
+}
+
+func selectPrevParens(med *Med, file *File) {
+	file.SelectPrevBlock("(", ")", false)
+}
+
+func selectNextBrackets(med *Med, file *File) {
+	file.SelectNextBlock("[", "]", false)
+}
+
+func selectPrevBrackets(med *Med, file *File) {
+	file.SelectPrevBlock("[", "]", false)
+}
+
+func selectNextBraces(med *Med, file *File) {
+	file.SelectNextBlock("{", "}", false)
+}
+
+func selectPrevBraces(med *Med, file *File) {
+	file.SelectPrevBlock("{", "}", false)
+}
+
+// helper, move somewhere
+func runStdinPipe(input []byte, cmdName string, args ...string) (out []byte, err error) {
+	cmd := exec.Command(cmdName, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return
+	}
+	stdin.Write(input)
+	stdin.Close()
+	out, err = cmd.Output()
+	if err != nil {
+		return
+	}
+	return
+}
+
 func dotPipe(med *Med, file *File) {
 	finish := func(cancel bool) {
 		med.mode = CommandMode
-		cmd := exec.Command("sed", string(med.dialog.file.text))
-		stdin, err := cmd.StdinPipe()
+		// Why parse the arguments here if I can spawn a shell...
+		out, err := runStdinPipe(file.DotText(), "/bin/sh", "-c", string(med.dialog.file.text))
 		if err != nil {
 			med.pushError(err)
 			return
 		}
-		stdin.Write([]byte(file.DotText()))
-		stdin.Close()
-		out, err := cmd.Output()
+		file.DotChange(out)
+	}
+	med.dialog = &Dialog{
+		prompt: "pipe",
+		file:   &File{},
+		finish: finish,
+	}
+	med.mode = DialogMode
+}
+
+func dotSed(med *Med, file *File) {
+	finish := func(cancel bool) {
+		med.mode = CommandMode
+		out, err := runStdinPipe(file.DotText(), "sed", string(med.dialog.file.text))
 		if err != nil {
 			med.pushError(err)
 			return
@@ -333,6 +412,14 @@ func dotPipe(med *Med, file *File) {
 		finish: finish,
 	}
 	med.mode = DialogMode
+}
+
+func dotEmptyLineBelow(med *Med, file *File) {
+	file.EmptyLineBelow()
+}
+
+func dotEmptyLineAbove(med *Med, file *File) {
+	file.EmptyLineAbove()
 }
 
 func dotDuplicateBelow(med *Med, file *File) {
@@ -432,6 +519,7 @@ func commandMode(med *Med, file *File) {
 }
 func editingMode(med *Med, file *File) {
 	med.mode = EditingMode
+	file.ViewToDot()
 }
 func switchBuffer(med *Med, file *File) {
 }
