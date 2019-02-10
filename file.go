@@ -20,16 +20,22 @@ import (
 // When creating one, first the point should be moved, then the point offset
 // saved, then the operation performed and inserted/deleted text copied.
 //
+// All undo records have their ID. Records with the same ID are considered a single
+// operation and are undone/redone as one unit.
+//
+// When a possibly compound operation is considered complete, it should be
+// ended with file.UndoBlock(), so it is correctly registered as a unit and the next
+// operation is distinguished.
+//
 // Currently, undo records are created for every insert/delete operation, which
 // will probably result in clogging of the memory over time. Let's leave it
 // unrestricted and see, if it's going to be a real problem.
 type Undo struct {
-	// Offset of the change. It is always at the beginning of the change.
-	off int
-	// Copy of the changed text.
-	text []byte
-	// True if text was inserted during the change, false if deleted.
-	isInsert bool
+	id uint64     // Serial ID of the change.
+	dot Dot       // State of dot before the change.
+	off int       // Offset of the change. It is always at the beginning of the change.
+	text []byte   // Copy of the changed text.
+	isInsert bool // True if text was inserted during the change, false if deleted.
 }
 
 type Dot struct {
@@ -44,6 +50,8 @@ type File struct {
 	dot      Dot
 	search   []byte // Last search.
 	view     View
+	lineop   bool   // Flag indicating if the Copy/Cut operation was done on the entire line (without selection).
+	undoId   uint64 // Undo record serial ID.
 	undos    *list.List
 	redos    *list.List
 	text     []byte
@@ -96,7 +104,6 @@ func (file *File) GotoLine(l int) {
 	file.view.Adjust(file.text, file.dot.start)
 }
 
-// TODO: global search from the dot
 func (file *File) Search(what []byte, forward bool) {
 	var off int
 	if forward {
@@ -151,43 +158,57 @@ func (file *File) ViewAdjust() {
 
 func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 	// Mini file (dialogs) doesn't use the undo stack.
-	if file.undos == nil {
+	// Also, don't create needless zero-length undo records.
+	if file.undos == nil || len(what) == 0 {
 		return
 	}
-	u := Undo{off, append([]byte(nil), what...), isInsert}
+	u := Undo{file.undoId, file.dot, off, append([]byte(nil), what...), isInsert}
 	file.undos.PushFront(u)
 	file.redos.Init()
 }
 
+// UndoBlock marks the *end* of the current undo block.
+// All changes upto now are considered a single operation to be undone.
+func (file *File) UndoBlock() {
+	file.undoId++
+}
+
 func (file *File) Undo() {
-	//e := file.undos.Front()
-	//if e == nil {
-		//return
-	//}
-	//u := file.undos.Remove(e).(Undo)
-	//file.Goto(u.off)
-	//if u.isInsert {
-		//file.delete(u.off, u.off+len(u.text))
-	//} else {
-		//// Use insert() so the undo record is not recreated.
-		//file.insert(u.text)
-	//}
-	//file.redos.PushFront(u)
+	e := file.undos.Front()
+	if e == nil {
+		return
+	}
+	for id := e.Value.(Undo).id; e != nil && id == e.Value.(Undo).id; {
+		u := file.undos.Remove(e).(Undo)
+		if u.isInsert {
+			file.text, _ = textDelete(file.text, u.off, u.off+len(u.text))
+		} else {
+			file.text = textInsert(file.text, u.off, u.text)
+		}
+		file.dot = u.dot
+		file.redos.PushFront(u)
+		e = file.undos.Front()
+	}
 }
 
 func (file *File) Redo() {
-	//e := file.redos.Front()
-	//if e == nil {
-		//return
-	//}
-	//u := file.redos.Remove(e).(Undo)
-	//file.Goto(u.off)
-	//if u.isInsert {
-		//file.insert(u.text)
-	//} else {
-		//file.delete(u.off, u.off+len(u.text))
-	//}
-	//file.undos.PushFront(u)
+	e := file.redos.Front()
+	if e == nil {
+		return
+	}
+	for id := e.Value.(Undo).id; e != nil && id == e.Value.(Undo).id; {
+		u := file.redos.Remove(e).(Undo)
+		if u.isInsert {
+			file.text = textInsert(file.text, u.off, u.text)
+		} else {
+			file.text, _ = textDelete(file.text, u.off, u.off+len(u.text))
+		}
+		// TODO: figure out how this should work...
+		// file.dot = u.dot
+		file.DotSet(u.off)
+		file.undos.PushFront(u)
+		e = file.redos.Front()
+	}
 }
 
 func (file *File) DotIsEmpty() bool {
@@ -266,7 +287,45 @@ func (file *File) DotOpenAbove() {
 }
 
 func (file *File) ClipCopy() []byte {
-	return append([]byte(nil), file.text[file.dot.start:file.dot.end]...)
+	if file.DotIsEmpty() {
+		ls, le := lineStart(file.text, file.dot.end), min(len(file.text), lineEnd(file.text, file.dot.end)+1)
+		file.lineop = true
+		return append([]byte(nil), file.text[ls:le]...)
+	}
+	return append([]byte(nil), file.DotText()...)
+}
+
+func (file *File) ClipCut() []byte {
+	var clip []byte
+	var start, end int
+	if file.DotIsEmpty() {
+		start, end = lineStart(file.text, file.dot.end), min(len(file.text), lineEnd(file.text, file.dot.end)+1)
+		file.lineop = true
+	} else {
+		start, end = file.dot.start, file.dot.end
+	}
+	file.text, clip = textDelete(file.text, start, end)
+	file.pushUndo(clip, start, false)
+	file.UndoBlock()
+	file.DotSet(start)
+	file.modified = true
+	return clip
+}
+
+// Paste inserts the clip into the file.
+// If there was a linewise (without selection) Copy/Cut operation, it inserts clip on the line above the dot.
+func (file *File) Paste(clip []byte) {
+	if !file.lineop {
+		file.Insert(clip)
+		return
+	}
+	ls := lineStart(file.text, file.dot.start)
+	file.pushUndo(clip, ls, true)
+	file.text = textInsert(file.text, ls, clip)
+	file.dot.start += len(clip)
+	file.dot.end += len(clip)
+	file.UndoBlock()
+	file.modified = true
 }
 
 var wordRe = regexp.MustCompile(`\w+`)
@@ -317,6 +376,11 @@ func (file *File) SelectPrevWord(expand bool) {
 	if !expand {
 		file.dot.end = de
 	}
+}
+
+func (file *File) SelectLine() {
+	file.dot.start = lineStart(file.text, file.dot.end)
+	file.dot.end = lineEnd(file.text, file.dot.end)
 }
 
 func (file *File) SelectNextLine(expand bool) {
@@ -422,24 +486,43 @@ func (file *File) DotInsert(what []byte, op InsertOp, setDot bool) {
 	file.modified = true
 }
 
-// Insert the byte slice what in the after the current dot and set the dot.
-// Insert is to be called from the main editor.
 func (file *File) Insert(what []byte) {
-	file.DotInsert(what, After, false)
-	file.DotSet(file.dot.end + len(what))
-	// TODO undo
+	t := file.DotText()
+	// No undo if dot is empty.
+	file.pushUndo(t, file.dot.start, false)
+	file.text, _ = textDelete(file.text, file.dot.start, file.dot.end)
+	file.pushUndo(what, file.dot.start, true)
+	file.text = textInsert(file.text, file.dot.start, what)
+	file.DotSet(file.dot.start + len(what))
+	file.modified = true
+}
+
+func (file *File) SelfInsert(what []byte) {
+	// Don't insert any escape sequences or control characters.
+	// That should cover any stray alt/ctrl key combos.
+	// Allow literal tab and newline characters.
+	if what[0] == '\x1b' || what[0] < 0x20 && what[0] != '\t' && what[0] != '\n' {
+		return
+	}
+
+	file.Insert(what)
+
+	// Break undo blocks into whitespace separated chunks.
+	if unicode.IsSpace(rune(what[0])) && file.DotIsEmpty() {
+		file.UndoBlock()
+	}
 }
 
 
-func (file *File) Delete(start, end int) (what []byte) {
+func (file *File) Delete(start, end int) ([]byte) {
 	start = max(0, start)
 	end = min(len(file.text), end)
+	var what []byte
 	file.text, what = textDelete(file.text, start, end)
 	file.DotSet(start)
 	file.modified = true
-	//what = file.delete(start, end)
-	//file.pushUndo(what, start, false)
-	return
+	file.pushUndo(what, start, false)
+	return what
 }
 
 // TODO: These two only really make sense when in edit mode and dot is empty.
@@ -463,6 +546,66 @@ func (file *File) Backspace() {
 }
 
 func (file *File) Clear() {
+}
+
+func (file *File) DotRight(expand bool) {
+	if file.dot.end >= len(file.text) {
+		return
+	}
+	_, s := utf8.DecodeRune(file.text[file.dot.end:])
+	if expand {
+		file.dot.end += s
+		return
+	}
+	if file.DotIsEmpty() {
+		file.dot.end += s
+	}
+	file.dot.start = file.dot.end
+}
+
+// TODO: DotLeft(shrink bool) ...
+func (file *File) DotLeft() {
+	if file.dot.start <= 0 {
+		return
+	}
+	if file.DotIsEmpty() {
+		_, s := utf8.DecodeLastRune(file.text[:file.dot.start])
+		file.dot.start -= s
+	}
+	file.dot.end = file.dot.start
+}
+
+func (file *File) DotDown(expand bool) {
+	le := lineEnd(file.text, file.dot.end)
+	if le >= len(file.text) {
+		return
+	}
+	file.dot.end = le + 1
+	if !expand {
+		file.dot.start = file.dot.end
+	}
+}
+
+func (file *File) DotUp() {
+	ls := lineStart(file.text, file.dot.end)
+	if ls <= 0 {
+		return
+	}
+	file.dot.start = lineStart(file.text, ls-1)
+	file.dot.end = file.dot.start
+}
+
+
+// DotWrap wraps the dot with the strings left and right.
+func (file *File) DotWrap(left string, right string) {
+	l, r := []byte(left), []byte(right)
+	file.text = textInsert(file.text, file.dot.end, r)
+	file.pushUndo(r, file.dot.end, true)
+	file.text = textInsert(file.text, file.dot.start, l)
+	file.pushUndo(l, file.dot.start, true)
+	file.UndoBlock()
+	file.dot.start += len(l)
+	file.dot.end += len(l)
 }
 
 func (file *File) Save() error {

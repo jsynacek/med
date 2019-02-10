@@ -300,3 +300,19 @@ func textPrevBlock(text []byte, off int, left string, right string) (start int, 
 	}
 	return
 }
+
+func textColumn(text []byte, off int, tabWidth int) (int, int) {
+	var col int
+	ls := lineStart(text, off)
+	p := ls
+	for p < off {
+		_, s := utf8.DecodeRune(text[p:])
+		if text[p] == '\t' {
+			col += tabWidth - col%tabWidth
+		} else {
+			col++
+		}
+		p += s
+	}
+	return col, p-ls
+}

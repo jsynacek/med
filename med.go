@@ -61,6 +61,8 @@ type Med struct {
 	errors    *list.List
 	keyseq    string
 	clip      []byte
+	// TODO debug
+	input     []byte
 }
 
 //// Keymaps.
@@ -90,11 +92,12 @@ var commandModeKeymap = joinKeybinds(
 	// that start with an escape sequence.
 	Keybind{kEsc, commandMode},
 	[]Keybind{
-		{"k", viewScrollPageDown},
-		{"i", viewScrollPageUp},
+		{kPageDown, viewScrollPageDown},
+		{kPageUp, viewScrollPageUp},
+		{kDown, viewScrollDown},
+		{kUp, viewScrollUp},
 		{"z", viewScrollAdjust},
-		{"K", viewScrollDown},
-		{"I", viewScrollUp},
+
 		{"n", searchForward},
 		{"N", searchBackward},
 		{";", searchView},
@@ -115,14 +118,17 @@ var commandModeKeymap = joinKeybinds(
 		{"sk", dotOpenBelow},
 		{"si", dotOpenAbove},
 
+		{"l", dotRight},
+		{"j", dotLeft},
+
 		{kAlt("l"), selectNextWord},
-		{kAlt("L"), selectNextWordExpand},
+		//{"L", selectNextWordExpand},
 		{kAlt("j"), selectPrevWord},
-		{kAlt("J"), selectPrevWordExpand},
-		{kAlt("k"), selectNextLine},
-		{kAlt("K"), selectNextLineExpand},
-		{kAlt("i"), selectPrevLine},
-		{kAlt("I"), selectPrevLineExpand},
+		//{"J", selectPrevWordExpand},
+		//{"k", selectNextLine},
+		//{"K", selectNextLineExpand},
+		//{"i", selectPrevLine},
+		//{"I", selectPrevLineExpand},
 		{"ml", selectLineEnd},
 		{"mj", selectLineStart},
 		{"ma", selectAll},
@@ -141,9 +147,9 @@ var commandModeKeymap = joinKeybinds(
 
 		{" l", gotoLine},
 		{"c", clipCopy},
-		{"v", clipPasteAfter},
-		{"V", clipPasteBefore},
-		{"R", clipPasteChange},
+		//{"v", clipPasteAfter},
+		//{"V", clipPasteBefore},
+		//{"R", clipPasteChange},
 		{"x", clipCut},
 		//{"y", undo},
 		//{"Y", redo},
@@ -486,6 +492,14 @@ func dotOpenAbove(med *Med, file *File) {
 	med.mode = EditingMode
 }
 
+func dotRight(med *Med, file *File) {
+	file.DotRight(false)
+}
+
+func dotLeft(med *Med, file *File) {
+	file.DotLeft()
+}
+
 //// Command mode commands.
 
 func gotoLine(med *Med, file *File) {
@@ -508,7 +522,7 @@ func gotoLine(med *Med, file *File) {
 
 }
 func insertNewline(med *Med, file *File) {
-	file.Insert(NL)
+	file.SelfInsert(NL)
 }
 func insertNewlineInPlace(med *Med, file *File) {
 	file.DotInsert(NL, After, false)
@@ -636,27 +650,8 @@ func clipCopy(med *Med, file *File) {
 	med.clip = file.ClipCopy()
 }
 
-func clipPasteAfter(med *Med, file *File) {
-	if med.clip != nil {
-		file.DotInsert(med.clip, After, true)
-	}
-}
-
-func clipPasteBefore(med *Med, file *File) {
-	if med.clip != nil {
-		file.DotInsert(med.clip, Before, true)
-	}
-}
-
-func clipPasteChange(med *Med, file *File) {
-	if med.clip != nil {
-		file.DotInsert(med.clip, Replace, true)
-	}
-}
-
 func clipCut(med *Med, file *File) {
-	med.clip = append([]byte(nil), file.DotText()...)
-	file.DotDelete()
+	med.clip = file.ClipCut()
 }
 
 func (med *Med) load() {
@@ -688,7 +683,7 @@ func (med *Med) statusLine() string {
 	if len(med.keyseq) > 0 {
 		ks = "|" + med.keyseq + "|"
 	}
-	return fmt.Sprintf("%s %1s %s %s", m, e, file.name, ks)
+	return fmt.Sprintf("%s %1s %s %s %q", m, e, file.name, ks, med.input)
 }
 
 // Whenever med.mode is set to ErrorMode, there is always at least one
@@ -829,28 +824,162 @@ func main() {
 		if string(b[:n]) == kCtrl("q") {
 			return
 		}
+		// TODO debug
+		med.input = b[:n]
 		if med.mode == ErrorMode {
 			// Any key in ErrorMode will do.
 			med.popError()
 		} else {
+			cmdRight := func(med *Med, file *File) {
+				file.DotRight(false)
+			}
+			cmdRightExpand := func(med *Med, file *File) {
+				file.DotRight(true)
+			}
+			cmdLeft := func(med *Med, file *File) {
+				file.DotLeft()
+			}
+			cmdDown := func(med *Med, file *File) {
+				file.DotDown(false)
+			}
+			cmdDownExpand := func(med *Med, file *File) {
+				file.DotDown(true)
+			}
+			cmdUp := func(med *Med, file *File) {
+				file.DotUp()
+			}
+			cmdDeleteChar := func(med *Med, file *File) {
+				file.DeleteChar()
+			}
+			cmdBackspace := func(med *Med, file *File) {
+				file.Backspace()
+			}
+			cmdInsertNewline := func(med *Med, file *File) {
+				file.SelfInsert(NL)
+			}
+			cmdOpenBelow := func(med *Med, file *File) {
+				file.DotOpenBelow()
+			}
+			cmdOpenAbove := func(med *Med, file *File) {
+				file.DotOpenAbove()
+			}
+			cmdSearchForward := func(med *Med, file *File) {
+				searchForward(med, file)
+			}
+			cmdSearchBackward := func(med *Med, file *File) {
+				searchBackward(med, file)
+			}
+			cmdSaveFile := func(med *Med, file *File) {
+				saveFile(med, file)
+			}
+			cmdUndo := func(med *Med, file *File) {
+				file.Undo()
+			}
+			cmdRedo := func(med *Med, file *File) {
+				file.Redo()
+			}
+			cmdGotoSymbol := func(med *Med, file *File) {
+				goGotoSymbol(med, file)
+			}
+			// TODO debug
+			cmdTest := func(med *Med, file *File) {
+				file.dot.start = 10
+				file.dot.end = 60
+			}
+			// TODO implement properly
+			cmdComment := func(med *Med, file *File) {
+				oldStart := file.dot.start
+				start := lineStart(file.text, file.dot.start)
+				file.dot.start = start
+				end := file.dot.end
+				text := append([]byte(nil), file.text[start:end]...)
+				off := 0
+				for p := 0; p <= len(text); {
+					text = textInsert(text, p, []byte("// "))
+					p = lineEnd(text, p) + 1
+					off += len("// ")
+				}
+				file.DotDelete()
+				file.Insert(text)
+				file.UndoBlock()
+				file.dot.start = oldStart
+				file.dot.end = end + off
+			}
+			cmdQuote := func(med *Med, file *File) {
+				if file.DotIsEmpty() {
+					file.Insert([]byte(`"`))
+				} else {
+					file.DotWrap(`"`, `"`)
+				}
+			}
+			cmdPaste := func(med *Med, file *File) {
+				if med.clip == nil {
+					return
+				}
+				file.Paste(med.clip)
+			}
+			cmdSelectLine := func(med *Med, file *File) {
+				file.SelectLine()
+			}
+			keymap := []Keybind{
+				{kAlt("l"), cmdRight},
+				{kAlt("L"), cmdRightExpand},
+				{kAlt("j"), cmdLeft},
+				{kAlt("k"), cmdDown},
+				{kAlt("K"), cmdDownExpand},
+				{kAlt("i"), cmdUp},
+				{kDelete, cmdDeleteChar},
+				{kBackspace, cmdBackspace},
+				{kEnter, cmdInsertNewline},
+				{kPageDown, viewScrollPageDown},
+				{kPageUp, viewScrollPageUp},
+				{kDown, viewScrollDown},
+				{kUp, viewScrollUp},
+				{kAlt("z"), viewScrollAdjust},
+				{`"`, cmdQuote},
+				{kAlt("h"), cmdOpenBelow},
+				{kAlt("H"), cmdOpenAbove},
+				{kAlt("n"), cmdSearchForward},
+				{kAlt("N"), cmdSearchBackward},
+				{kAlt("o"), searchNextForward2},
+				{kAlt("u"), searchNextBackward2},
+				{kCtrl("x"), clipCut},
+				{kCtrl("c"), clipCopy},
+				{kCtrl("v"), cmdPaste},
+				{kCtrl("z"), cmdUndo},
+				{kCtrl("y"), cmdRedo},
+				{kAlt("s"), cmdGotoSymbol},
+				{kAlt("m")+"l", cmdSelectLine},
+				{kCtrl("s"), cmdSaveFile},
+				{kAlt("t"), cmdTest},
+				{kAlt("/"), cmdComment},
+			}
+			if med.mode == DialogMode {
+				keymap = dialogModeKeymap
+			}
+
 			med.keyseq += string(b[:n])
-			match, v := resolveKeys(editorKeymaps[med.mode], med.keyseq)
+			//match, v := resolveKeys(editorKeymaps[med.mode], med.keyseq)
+			match, v := resolveKeys(keymap, med.keyseq)
 			switch match {
 			case Match:
 				command := v.(func(*Med, *File))
-				command(&med, file)
+				f := file
+				if med.mode == DialogMode {
+					f = med.dialog.file
+				}
+				command(&med, f)
 				med.keyseq = ""
 			case PartialMatch:
 				break // Nothing, for now.
 			case NoMatch:
-				switch med.mode {
-				case EditingMode:
-					file.Insert(b[:n])
-				case DialogMode:
-					med.dialog.file.Insert(b[:n])
+				if med.mode == DialogMode {
+					med.dialog.file.SelfInsert(b[:n])
 					if med.dialog.helm != nil {
 						med.dialog.update()
 					}
+				} else {
+					file.SelfInsert(b[:n])
 				}
 				med.keyseq = ""
 			}
