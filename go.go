@@ -1,12 +1,12 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"os/exec"
+	// "bufio"
+	// "bytes"
+	// "os/exec"
 	"go/scanner"
 	"go/token"
-	"strings"
+	// "strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -189,28 +189,29 @@ loop:
 }
 
 func goGrepSymbol(re string, path string) (*Helm, error) {
-	out, err := exec.Command("egrep", "-n", "-H", re, path).Output()
-	if err != nil {
-		return nil, err
-	}
+	// out, err := exec.Command("egrep", "-n", "-H", re, path).Output()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	var data []HelmItem
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		line := scanner.Text()
-		// egrep output format is 'file:linenumber:match'
-		data = append(data, HelmItem{strings.SplitN(line, ":", 3)[2], line})
-	}
+	// var data []HelmItem
+	// scanner := bufio.NewScanner(bytes.NewReader(out))
+	// for scanner.Scan() {
+	// 	line := scanner.Text()
+	// 	// egrep output format is 'file:linenumber:match'
+	// 	data = append(data, HelmItem{strings.SplitN(line, ":", 3)[2], line})
+	// }
 
-	filter := func(item *HelmItem, what []byte) bool {
-		return bytes.Index([]byte(item.data), what) >= 0
-	}
-	helm := &Helm{
-		rows: helmRows,
-		cols: helmCols,
-		filter: filter,
-		data: data,
-		cache: data,
-	}
-	return helm, nil
+	// filter := func(item *HelmItem, what []byte) bool {
+	// 	return bytes.Index([]byte(item.data), what) >= 0
+	// }
+	// helm := &Helm{
+	// 	rows: helmRows,
+	// 	cols: helmCols,
+	// 	filter: filter,
+	// 	data: data,
+	// 	cache: data,
+	// }
+	// return helm, nil
+	return nil, nil
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"container/list"
 	"io/ioutil"
 	"os"
@@ -42,6 +43,12 @@ type Dot struct {
 	start, end int
 }
 
+type Selection struct {
+	row, col int
+	width int // In characters.
+	line bool // Does the selection include newline at the end?
+}
+
 // File represents a real file loaded into memory.
 type File struct {
 	name     string
@@ -51,7 +58,7 @@ type File struct {
 	search   []byte // Last search.
 	view     View
 	lineop   bool   // Flag indicating if the Copy/Cut operation was done on the entire line (without selection).
-	undoId   uint64 // Undo record serial ID.
+	undoID   uint64 // Undo record serial ID.
 	undos    *list.List
 	redos    *list.List
 	text     []byte
@@ -162,7 +169,7 @@ func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 	if file.undos == nil || len(what) == 0 {
 		return
 	}
-	u := Undo{file.undoId, file.dot, off, append([]byte(nil), what...), isInsert}
+	u := Undo{file.undoID, file.dot, off, append([]byte(nil), what...), isInsert}
 	file.undos.PushFront(u)
 	file.redos.Init()
 }
@@ -170,7 +177,7 @@ func (file *File) pushUndo(what []byte, off int, isInsert bool) {
 // UndoBlock marks the *end* of the current undo block.
 // All changes upto now are considered a single operation to be undone.
 func (file *File) UndoBlock() {
-	file.undoId++
+	file.undoID++
 }
 
 func (file *File) Undo() {
@@ -292,6 +299,7 @@ func (file *File) ClipCopy() []byte {
 		file.lineop = true
 		return append([]byte(nil), file.text[ls:le]...)
 	}
+	file.lineop = false
 	return append([]byte(nil), file.DotText()...)
 }
 
@@ -303,6 +311,7 @@ func (file *File) ClipCut() []byte {
 		file.lineop = true
 	} else {
 		start, end = file.dot.start, file.dot.end
+		file.lineop = false
 	}
 	file.text, clip = textDelete(file.text, start, end)
 	file.pushUndo(clip, start, false)
@@ -315,6 +324,9 @@ func (file *File) ClipCut() []byte {
 // Paste inserts the clip into the file.
 // If there was a linewise (without selection) Copy/Cut operation, it inserts clip on the line above the dot.
 func (file *File) Paste(clip []byte) {
+	if clip == nil {
+		return
+	}
 	if !file.lineop {
 		file.Insert(clip)
 		return
@@ -618,4 +630,116 @@ func (file *File) Save() error {
 	}
 	file.modified = false
 	return nil
+}
+
+func (file *File) DotPosition(relative bool) (int, int) {
+	col, _ := textColumn(file.text, file.dot.end, 8)
+	// TODO: properly count virtual lines, not regular ones
+	from := 0
+	if relative {
+		from = file.view.start
+	}
+	row := bytes.Count(file.text[from:file.dot.end], NL)
+	return col, row
+}
+
+// TODO: Thoroughly document.
+func (file *File) RowColToPosition(row, col int) int {
+	p := file.view.start
+	ts := file.view.visual.tabStop
+	c := 0
+	for row > 0 {
+		r, s := utf8.DecodeRune(file.text[p:])
+		if r == '\t' {
+			c = min(file.view.width, c+ts-(c%ts))
+		} else if r == '\n' {
+			// Visual line end.
+			row--
+			c = 0
+		} else {
+			c++
+		}
+		if c >= file.view.width {
+			// Visual line end.
+			row--
+			c = 0
+		}
+		p += s
+	}
+	c = 0
+	for c < col {
+		r, s := utf8.DecodeRune(file.text[p:])
+		if r == '\t' {
+			c += ts - (c%ts)
+		} else if r == '\n' {
+			return p
+		} else {
+			c++
+		}
+		p += s
+	}
+	return p
+}
+
+// TODO: Thoroughly document.
+func (file *File) PreRender() (lines [][]byte, selections []*Selection, cursorRow int, cursorCol int) {
+	p := file.view.start
+	row := 0
+	col := 0
+	ts := file.view.visual.tabStop
+	line := []byte(nil)
+	var selection *Selection
+	inSelection := false
+	for p < len(file.text) && row < file.view.height {
+		if p == file.dot.start {
+			selection = &Selection{row: row, col: col, width: col}
+			inSelection = true
+		}
+		if p == file.dot.end {
+			selection.width = col - selection.width
+			selections = append(selections, selection)
+			inSelection = false
+			cursorRow, cursorCol = row, col
+		}
+		r, s := utf8.DecodeRune(file.text[p:])
+		if r == '\t' {
+			c := col
+			col = min(file.view.width, col+ts-(col%ts))
+			line = append(line, bytes.Repeat([]byte(" "), col-c)...)
+			if inSelection {
+				selection.width = c
+			}
+		} else if r == '\n' {
+			// Visual line end.
+			row++
+			col = 0
+			lines = append(lines, line)
+			line = []byte(nil)
+			if inSelection {
+				selection.width = col
+				selection.line = true
+				selections = append(selections, selection)
+				selection = &Selection{row: row, col: col, width: 0}
+			}
+		} else {
+			line = append(line, string(r)...)
+			col++
+		}
+		if col >= file.view.width {
+			// Visual line end.
+			row++
+			col = 0
+			lines = append(lines, line)
+			line = []byte(nil)
+			if inSelection {
+				selection.width = file.view.width
+				selection.line = true
+				selections = append(selections, selection)
+				selection = &Selection{row: row, col: col, width: 0}
+			}
+		}
+		p += s
+		file.view.end = p
+	}
+	return lines, selections, cursorRow, cursorCol
 }

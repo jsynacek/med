@@ -1,988 +1,276 @@
 package main
 
 import (
-	"container/list"
-	"errors"
-	"fmt"
+	// "container/list"
+	// "errors"
+	// "fmt"
 	"log"
-	"os"
-	"os/exec"
-	"strconv"
-	"strings"
-	"unicode/utf8"
-
-	"github.com/jsynacek/med/term"
+	// "os"
+	// "os/exec"
+	// "strconv"
+	// "strings"
+	//"unicode/utf8"
 )
-
-const (
-	CommandMode = iota
-	EditingMode
-	DialogMode
-	ErrorMode
-)
-
-// Options.
-var (
-	tabStop          = 8
-	keepVisualColumn = true
-	keepIndent       = true
-	smartLineStart   = true
-	showVisuals      = false
-	showSyntax       = false
-	helmCols         = 60
-	helmRows         = 15
-)
-
-type updateFunc func()
-type finishFunc func(bool)
-type completeFunc func()
-
-type Dialog struct {
-	prompt string
-	file   *File
-	helm   *Helm
-	update updateFunc
-	finish finishFunc
-}
-
-type Selection struct {
-	active bool
-	sel    int // Type - chars or lines.
-	point  int // Point moves.
-	anchor int // Anchor stays.
-}
 
 type Med struct {
-	files     *list.List
-	file      *list.Element
-	mode      int
-	dialog    *Dialog
-	selection Selection
-	errors    *list.List
-	keyseq    string
-	clip      []byte
-	// TODO debug
-	input     []byte
-}
-
-//// Keymaps.
-
-func joinKeybinds(values ...interface{}) (result []Keybind) {
-	for _, v := range values {
-		switch v.(type) {
-		case Keybind:
-			result = append(result, v.(Keybind))
-		case []Keybind:
-			result = append(result, v.([]Keybind)...)
-		default:
-			panic(fmt.Sprintf("cannot append to keymap: %v", v))
-		}
-	}
-	return
-}
-
-var commonMovementKeymap = []Keybind{
-}
-
-var movementKeymap = joinKeybinds(
-)
-
-var commandModeKeymap = joinKeybinds(
-	// Catch kEsc first, so it doesn't count as a key sequence start other keys,
-	// that start with an escape sequence.
-	Keybind{kEsc, commandMode},
-	[]Keybind{
-		{kPageDown, viewScrollPageDown},
-		{kPageUp, viewScrollPageUp},
-		{kDown, viewScrollDown},
-		{kUp, viewScrollUp},
-		{"z", viewScrollAdjust},
-
-		{"n", searchForward},
-		{"N", searchBackward},
-		{";", searchView},
-		{".", searchDot},
-		{"o", searchNextForward2},
-		{"u", searchNextBackward2},
-
-		{"f", dotInsertAfter},
-		{"F", dotInsertBefore},
-		{"r", dotChange},
-		{"|", dotPipe},
-		{"&", dotSed},
-		{"wk", dotEmptyLineBelow},
-		{"wi", dotEmptyLineAbove},
-
-		{"e", dotDuplicateBelow},
-		{"E", dotDuplicateAbove},
-		{"sk", dotOpenBelow},
-		{"si", dotOpenAbove},
-
-		{"l", dotRight},
-		{"j", dotLeft},
-
-		{kAlt("l"), selectNextWord},
-		//{"L", selectNextWordExpand},
-		{kAlt("j"), selectPrevWord},
-		//{"J", selectPrevWordExpand},
-		//{"k", selectNextLine},
-		//{"K", selectNextLineExpand},
-		//{"i", selectPrevLine},
-		//{"I", selectPrevLineExpand},
-		{"ml", selectLineEnd},
-		{"mj", selectLineStart},
-		{"ma", selectAll},
-
-		{")", selectNextParens},
-		{"(", selectPrevParens},
-		{"]", selectNextBrackets},
-		{"[", selectPrevBrackets},
-		{"}", selectNextBraces},
-		{"{", selectPrevBraces},
-		//{"mw", selectWord},
-		//{"ms", selectString},
-		//{"md", selectBlock},
-		{"gs", goGotoSymbol},
-
-
-		{" l", gotoLine},
-		{"c", clipCopy},
-		//{"v", clipPasteAfter},
-		//{"V", clipPasteBefore},
-		//{"R", clipPasteChange},
-		{"x", clipCut},
-		//{"y", undo},
-		//{"Y", redo},
-		//{"sk", openBelow},
-		//{"si", openAbove},
-		//{"dL", changeLineEnd},
-		//{"dJ", changeLineStart},
-		//{"dd", changeLine},
-		//{"mm", selectionMode},
-		{" f", switchBuffer},
-		{" q", closeBuffer},
-		{" o", loadFile},
-		{" s", saveFile},
-		//{"zI", viewToPointTop},
-		//{"zJ", viewToPointMiddle},
-		//{"zK", viewToPointBottom},
-	},
-)
-
-var editingModeKeymap = joinKeybinds(
-	Keybind{kEsc, func(*Med, *File) {}},
-	//commonMovementKeymap,
-	[]Keybind{
-		{kAlt(" "), commandMode},
-		{kEnter, insertNewline},
-		{kAlt("l"), insertNewlineInPlace},
-		{kDelete, deleteChar},
-		{kBackspace, backspace},
-	},
-)
-
-var dialogModeKeymap = []Keybind{
-	{kEsc, func(*Med, *File) {}},
-	{kAlt(" "), dialogCancel},
-	{kRight, dialogPointRight},
-	{kLeft, dialogPointLeft},
-	{kEnd, dialogPointLineEnd},
-	{kHome, dialogPointLineStart},
-	{kDelete, dialogDeleteChar},
-	{kBackspace, dialogBackspace},
-	{kCtrl("u"), dialogClear},
-	{kAlt("k"), dialogNextItem},
-	{kAlt("i"), dialogPrevItem},
-	{kEnter, dialogFinish},
-}
-
-var editorKeymaps = map[int][]Keybind{
-	CommandMode:   commandModeKeymap,
-	EditingMode:   editingModeKeymap,
-	DialogMode:    dialogModeKeymap,
-}
-
-// TODO: implement viewScrollStart - start of text
-//       implement viewScrollEnd - end of text
-
-func viewScrollDown(med *Med, file *File) {
-	//for i := 0; i < file.view.height/10; i++ {
-		file.view.ScrollDown(file.text)
-	//}
-}
-func viewScrollUp(med *Med, file *File) {
-	//for i := 0; i < file.view.height/10; i++ {
-		file.view.ScrollUp(file.text)
-	//}
-}
-func viewScrollPageDown(med *Med, file *File) {
-	for i := 0; i < file.view.height-2; i++ {
-		file.view.ScrollDown(file.text)
-	}
-}
-func viewScrollPageUp(med *Med, file *File) {
-	for i := 0; i < file.view.height-2; i++ {
-		file.view.ScrollUp(file.text)
-	}
-}
-func viewScrollAdjust(med *Med, file *File) {
-	file.ViewToDot()
-}
-
-func (med *Med) searchDialog(prompt string, finish finishFunc) {
-	med.dialog = &Dialog{
-		prompt: prompt,
-		file:   &File{},
-		finish: finish,
-	}
-	med.mode = DialogMode
-}
-
-func searchForward(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		if cancel {
-			return
-		}
-		file.Search(med.dialog.file.text, true)
-	}
-	med.searchDialog("search →", finish)
-}
-
-func searchBackward(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		if cancel {
-			return
-		}
-		file.Search(med.dialog.file.text, false)
-	}
-	med.searchDialog("search ←", finish)
-}
-
-func searchView(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		if cancel {
-			return
-		}
-		file.SearchView(med.dialog.file.text)
-	}
-	med.searchDialog("view search →", finish)
-}
-
-func searchDot(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		if cancel {
-			return
-		}
-		file.SearchDot(med.dialog.file.text)
-	}
-	med.searchDialog("dot search →", finish)
-}
-
-func searchNextForward2(med *Med, file *File) {
-	file.SearchNext(true)
-}
-
-func searchNextBackward2(med *Med, file *File) {
-	file.SearchNext(false)
-}
-
-func dotInsertAfter(med *Med, file *File) {
-	file.DotSet(file.dot.end)
-	file.ViewAdjust()
-	med.mode = EditingMode
-}
-
-func dotInsertBefore(med *Med, file *File) {
-	file.DotSet(file.dot.start)
-	file.ViewAdjust()
-	med.mode = EditingMode
-}
-
-func dotChange(med *Med, file *File) {
-	// TODO: Should this keep the inserted text in the dot?
-	file.DotDelete()
-	med.mode = EditingMode
-}
-
-func selectNextWord(med *Med, file *File) {
-	file.SelectNextWord(false)
-}
-
-func selectNextWordExpand(med *Med, file *File) {
-	file.SelectNextWord(true)
-}
-
-func selectPrevWord(med *Med, file *File) {
-	file.SelectPrevWord(false)
-}
-
-func selectPrevWordExpand(med *Med, file *File) {
-	file.SelectPrevWord(true)
-}
-
-func selectNextLine(med *Med, file *File) {
-	file.SelectNextLine(false)
-}
-
-func selectNextLineExpand(med *Med, file *File) {
-	file.SelectNextLine(true)
-}
-
-func selectPrevLine(med *Med, file *File) {
-	file.SelectPrevLine(false)
-}
-
-func selectPrevLineExpand(med *Med, file *File) {
-	file.SelectPrevLine(true)
-}
-
-func selectLineEnd(med *Med, file *File) {
-	file.SelectLineEnd()
-}
-
-func selectLineStart(med *Med, file *File) {
-	file.SelectLineStart()
-}
-
-func selectAll(med *Med, file *File) {
-	file.SelectAll()
-}
-
-func selectNextParens(med *Med, file *File) {
-	file.SelectNextBlock("(", ")", false)
-}
-
-func selectPrevParens(med *Med, file *File) {
-	file.SelectPrevBlock("(", ")", false)
-}
-
-func selectNextBrackets(med *Med, file *File) {
-	file.SelectNextBlock("[", "]", false)
-}
-
-func selectPrevBrackets(med *Med, file *File) {
-	file.SelectPrevBlock("[", "]", false)
-}
-
-func selectNextBraces(med *Med, file *File) {
-	file.SelectNextBlock("{", "}", false)
-}
-
-func selectPrevBraces(med *Med, file *File) {
-	file.SelectPrevBlock("{", "}", false)
-}
-
-func goGotoSymbol(med *Med, file *File) {
-	helm, err := goGrepSymbol("^(func|type|var) ", file.path)
-	if err != nil {
-		med.pushError(err)
-		return
-	}
-	helm.label = "go symbol"
-
-	update := func() {
-		helm.Update(med.dialog.file.text)
-	}
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		if cancel {
-			return
-		}
-		item := helm.Item()
-		if item != nil {
-			// egrep output format is 'file:linenumber:match'
-			line, err := strconv.Atoi(strings.SplitN(item.data, ":", 3)[1])
-			if err != nil {
-				med.pushError(err)
-			} else {
-				file.GotoLine(line)
-			}
-		}
-	}
-	med.dialog = &Dialog{
-		prompt: helm.label,
-		file:   &File{},
-		helm:   helm,
-		update: update,
-		finish: finish,
-	}
-	med.mode = DialogMode
-}
-
-// helper, move somewhere
-func runStdinPipe(input []byte, cmdName string, args ...string) (out []byte, err error) {
-	cmd := exec.Command(cmdName, args...)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return
-	}
-	stdin.Write(input)
-	stdin.Close()
-	out, err = cmd.Output()
-	if err != nil {
-		return
-	}
-	return
-}
-
-func dotPipe(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		// Why parse the arguments here if I can spawn a shell...
-		out, err := runStdinPipe(file.DotText(), "/bin/sh", "-c", string(med.dialog.file.text))
-		if err != nil {
-			med.pushError(err)
-			return
-		}
-		file.DotChange(out)
-	}
-	med.dialog = &Dialog{
-		prompt: "pipe",
-		file:   &File{},
-		finish: finish,
-	}
-	med.mode = DialogMode
-}
-
-func dotSed(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		out, err := runStdinPipe(file.DotText(), "sed", string(med.dialog.file.text))
-		if err != nil {
-			med.pushError(err)
-			return
-		}
-		file.DotChange(out)
-	}
-	med.dialog = &Dialog{
-		prompt: "sed",
-		file:   &File{},
-		finish: finish,
-	}
-	med.mode = DialogMode
-}
-
-func dotEmptyLineBelow(med *Med, file *File) {
-	file.EmptyLineBelow()
-}
-
-func dotEmptyLineAbove(med *Med, file *File) {
-	file.EmptyLineAbove()
-}
-
-func dotDuplicateBelow(med *Med, file *File) {
-	file.DotDuplicateBelow()
-}
-
-func dotDuplicateAbove(med *Med, file *File) {
-	file.DotDuplicateAbove()
-}
-
-func dotOpenBelow(med *Med, file *File) {
-	file.DotOpenBelow()
-	med.mode = EditingMode
-}
-
-func dotOpenAbove(med *Med, file *File) {
-	file.DotOpenAbove()
-	med.mode = EditingMode
-}
-
-func dotRight(med *Med, file *File) {
-	file.DotRight(false)
-}
-
-func dotLeft(med *Med, file *File) {
-	file.DotLeft()
-}
-
-//// Command mode commands.
-
-func gotoLine(med *Med, file *File) {
-	finish := func(cancel bool) {
-		med.mode = CommandMode
-		if cancel {
-			return
-		}
-		l, err := strconv.Atoi(string(med.dialog.file.text))
-		if err == nil {
-			file.GotoLine(l)
-		}
-	}
-	med.dialog = &Dialog{
-		prompt: "goto line",
-		file:   &File{},
-		finish: finish,
-	}
-	med.mode = DialogMode
-
-}
-func insertNewline(med *Med, file *File) {
-	file.SelfInsert(NL)
-}
-func insertNewlineInPlace(med *Med, file *File) {
-	file.DotInsert(NL, After, false)
-}
-func backspace(med *Med, file *File) {
-	file.Backspace()
-}
-func deleteChar(med *Med, file *File) {
-	file.DeleteChar()
-}
-func undo(med *Med, file *File) {
-	file.Undo()
-}
-func redo(med *Med, file *File) {
-	file.Redo()
-}
-
-func goComment(med *Med, file *File) {
-}
-func goUncomment(med *Med, file *File) {
-}
-func goIndent(med *Med, file *File) {
-}
-func goUnindent(med *Med, file *File) {
-}
-
-func loadFile(med *Med, file *File) {
-	med.load()
-}
-func saveFile(med *Med, file *File) {
-	err := file.Save()
-	if err != nil {
-		med.pushError(err)
-	}
-}
-func switchVisuals(med *Med, file *File) {
-	showVisuals = !showVisuals
-	file.view.visual = NewVisual(showVisuals)
-}
-func switchSyntax(med *Med, file *File) {
-	showSyntax = !showSyntax
-}
-
-func viewToPointTop(med *Med, file *File) {
-	//file.view.ToPoint(file.text, file.point.off, 0)
-}
-func viewToPointMiddle(med *Med, file *File) {
-	//file.view.ToPoint(file.text, file.point.off, file.view.height/2)
-}
-func viewToPointBottom(med *Med, file *File) {
-	//file.view.ToPoint(file.text, file.point.off, file.view.height-1)
-}
-
-func commandMode(med *Med, file *File) {
-	med.mode = CommandMode
-	med.selection.active = false
-}
-func editingMode(med *Med, file *File) {
-	med.mode = EditingMode
-	file.ViewToDot()
-}
-func switchBuffer(med *Med, file *File) {
-}
-func closeBuffer(med *Med, file *File) {
-	if med.files.Len() == 1 {
-		med.pushError(errors.New("refusing to close last buffer"))
-		return
-	}
-	f := med.file.Next()
-	med.files.Remove(med.file)
-	if f == nil {
-		f = med.files.Back()
-	}
-	med.file = f
-}
-
-//// Dialog mode commands.
-
-// TODO: Replace dialog.file with a simple string and implement those few editing functions just for it...
-
-func dialogPointRight(med *Med, file *File) {
-}
-func dialogPointLeft(med *Med, file *File) {
-}
-func dialogPointLineEnd(med *Med, file *File) {
-}
-func dialogPointLineStart(med *Med, file *File) {
-}
-func dialogDeleteChar(med *Med, file *File) {
-	med.dialog.file.DeleteChar()
-	if med.dialog.helm != nil {
-		med.dialog.update()
-	}
-}
-func dialogBackspace(med *Med, file *File) {
-	med.dialog.file.Backspace()
-	if med.dialog.helm != nil {
-		med.dialog.update()
-	}
-}
-func dialogClear(med *Med, file *File) {
-	med.dialog.file.Clear()
-	if med.dialog.helm != nil {
-		med.dialog.update()
-	}
-}
-func dialogCancel(med *Med, file *File) {
-	med.dialog.finish(true)
-}
-func dialogFinish(med *Med, file *File) {
-	med.dialog.finish(false)
-}
-func dialogNextItem(med *Med, file *File) {
-	if med.dialog.helm != nil {
-		med.dialog.helm.Next()
-	}
-}
-func dialogPrevItem(med *Med, file *File) {
-	if med.dialog.helm != nil {
-		med.dialog.helm.Prev()
-	}
-}
-
-func clipCopy(med *Med, file *File) {
-	med.clip = file.ClipCopy()
-}
-
-func clipCut(med *Med, file *File) {
-	med.clip = file.ClipCut()
-}
-
-func (med *Med) load() {
-}
-
-func (med *Med) saveAs() {
-}
-
-func (med *Med) statusLine() string {
-	var m string
-	switch med.mode {
-	case CommandMode:
-		m = "[c]"
-	case EditingMode:
-		m = "[e]"
-	case DialogMode:
-		m = "[d]"
-	case ErrorMode:
-		m = "[err]"
-	default:
-		m = "[unk]"
-	}
-	file := med.file.Value.(*File)
-	e := ""
-	if file.modified {
-		e = "🖉"
-	}
-	var ks string
-	if len(med.keyseq) > 0 {
-		ks = "|" + med.keyseq + "|"
-	}
-	return fmt.Sprintf("%s %1s %s %s %q", m, e, file.name, ks, med.input)
-}
-
-// Whenever med.mode is set to ErrorMode, there is always at least one
-// error in the errors stack.
-func (med *Med) pushError(e error) {
-	med.mode = ErrorMode
-	med.errors.PushFront(e)
-}
-
-func (med *Med) popError() {
-	med.errors.Remove(med.errors.Front())
-	if med.errors.Len() == 0 {
-		med.mode = CommandMode
-	}
-}
-
-func (med *Med) displayDialog(t *term.Term, y int) {
-	//file := med.dialog.file
-	file := med.dialog.file
-	// Prompt.
-	t.MoveTo(y, 0)
-	theme["dialogPrompt"].Out(t)
-	//t.Write([]byte(med.dialog.prompt))
-	t.Write([]byte(med.dialog.prompt))
-	theme["normal"].Out(t)
-	t.Write([]byte(" "))
-	// Before the point.
-	off := 0
-	t.Write(file.text[:off])
-	if off < len(file.text) {
-		// Point.
-		_, s := utf8.DecodeRune(file.text[off:])
-		s += off
-		theme["point"].Out(t)
-		t.Write(file.text[off:s])
-		theme["normal"].Out(t)
-		// After the point.
-		t.Write(file.text[s:])
-	} else {
-		// Point.
-		theme["point"].Out(t)
-		t.Write([]byte(" "))
-	}
-}
-
-func (med *Med) init(args []string) {
-	if len(args) == 0 {
-		med.files.PushBack(EmptyFile())
-		med.file = med.files.Front()
-		return
-	}
-	for _, arg := range args {
-		file, err := LoadFile(arg)
-		if err != nil {
-			med.pushError(err)
-			continue
-		}
-		med.files.PushBack(file)
-	}
-	if med.files.Len() == 0 {
-		for e := med.errors.Front(); e != nil; e = e.Next() {
-			log.Println(e.Value.(error))
-		}
-		os.Exit(1)
-	}
-	med.file = med.files.Front()
+	file *File
+	clip string
 }
 
 func main() {
-	med := Med{
-		files:     list.New(),
-		file:      nil,
-		mode:      CommandMode,
-		dialog:   nil,
-		selection: Selection{},
-		errors:    list.New(),
-		keyseq:    "",
-		clip:      nil,
-	}
-	med.init(os.Args[1:])
-
-	err := term.SetRaw()
+	file, err := LoadFile("/etc/services")
 	if err != nil {
-		term.Restore()
-		log.Fatal(err)
+		log.Fatal("file error")
 	}
+	// med := Med{
+	// 	files:     list.New(),
+	// 	file:      nil,
+	// 	mode:      CommandMode,
+	// 	dialog:    nil,
+	// 	selection: Selection{},
+	// 	errors:    list.New(),
+	// 	keyseq:    "",
+	// 	clip:      nil,
+	// }
+	// med.init(os.Args[1:])
 
-	t := term.NewTerm()
-	t.Init()
-	defer t.Finish()
+	winWidth, winHeight := 1024, 768
+	ui := UI{}
+	ui.Open(0, 0, winWidth, winHeight)
 
-	b := make([]byte, 8)
-	for {
-		file := med.file.Value.(*File)
-		theme["normal"].Out(t)
-		t.EraseDisplay()
+	// margin := 4
 
-		var highlights []Highlight
-		var selections []Highlight
-		// TODO: TMP: For now...
-		ss := file.dot.start
-		se := file.dot.end
-		if file.dot.start == file.dot.end {
-			_, s := utf8.DecodeRune(file.text[ss:])
-			med.selection.anchor += s
+	// TODO: Do properly.
+	file.view.width = 120
+	file.view.height = winHeight/ui.font.skip
+	run := true
+	for run {
+		ev := ui.NextEvent()
+		if ev.Type == KeyPress {
+			run = false
 		}
-		selections = append(selections, Highlight{ss, se, theme["selection"]})
+		// y := 0
 
-		if showSyntax {
-			highlights = getSyntax(file.text, file.view.start, file.view.height)
-		}
-		// TODO: Redraw only when cursor moves off screen or on insert/delete.
-		file.view.DisplayText(t, file.text, file.dot.end, selections, highlights)
+		// ev := ui.NextEvent()
+		// switch ev.Type {
+		// case ConfigureNotify:
+		// 	ui.Configure(ev)
+		// case KeyPress:
+		// 	k := ui.LookupKey(ev)
+		// 	fmt.Printf("keypress: %s(%q)\n", k, k)
+		// 	if k == "q" {
+		// 		run = false
+		// 	}
+		// 	switch k {
+		// 	case "l":
+		// 		file.DotRight(false)
+		// 	case "j":
+		// 		file.DotLeft()
+		// 	default:
+		// 		file.Insert([]byte(k))
+		// 	}
+		// 	// TODO: Is this a good idea? It would be better to simply call something line ui.Draw() from here
+		// 	//       and from case Expose as well.
+		// 	ui.Expose()
+		// case ButtonPress:
+		// 	e := ev.ButtonEvent()
+		// 	// fmt.Printf("x: %d, y: %d, state: %d, button: %d\n", e.x, e.y, e.state, e.button)
+		// 	if e.button == MouseButtonLeft {
+		// 		holdingMouseLeft = true
+		// 		row := int(e.y/skip)
+		// 		col := int(e.x/fontW)
+		// 		file.DotSet(file.RowColToPosition(row, col))
+		// 		fmt.Printf("file.dot.start:%d\n", file.dot.start)
+		// 	} else if holdingMouseLeft && e.button == MouseButtonMiddle {
+		// 		med.clip = file.ClipCut()
+		// 	} else if holdingMouseLeft && e.button == MouseButtonRight {
+		// 		file.Paste(med.clip)
+		// 	} else if e.button == MouseWheelDown {
+		// 		file.view.ScrollDown(file.text)
+		// 		file.view.ScrollDown(file.text)
+		// 	} else if e.button == MouseWheelUp {
+		// 		file.view.ScrollUp(file.text)
+		// 		file.view.ScrollUp(file.text)
+		// 	} else if e.button == MouseButtonRight {
+		// 		file.Search([]byte("tcp"), true)
+		// 		col, row := file.DotPosition(true)
+		// 		x := max(0, col-1)*fontW + margin + fontW/4
+		// 		y := row*skip + skip/4
+		// 		ui.MoveMouse(x, y)
+		// 	}
+		// 	ui.Expose()
+		// case ButtonRelease:
+		// 	e := ev.ButtonEvent()
+		// 	if e.button == MouseButtonLeft {
+		// 		holdingMouseLeft = false
+		// 	}
+		// case MotionNotify:
+		// 	e := ev.MotionEvent()
+		// 	if holdingMouseLeft {
+		// 		row := int(e.y/skip)
+		// 		col := int(e.x/fontW)
+		// 		file.dot.end = file.RowColToPosition(row, col)
+		// 		ui.Expose()
+		// 	}
+		// case Expose:
+		// 	ui.cr.SetSourceRGB(0xfd/255.0, 0xf6/255.0, 0xe3/255.0)
+		// 	ui.cr.Paint()
+		// 	ui.cr.SetSourceRGB(0xee/255.0, 0xe8/255.0, 0xd5/255.0)
+		// 	lines, selections, row, col := file.PreRender()
 
-		if med.mode == DialogMode && med.dialog.helm != nil {
-			med.dialog.helm.Display(t, (file.view.height-helmRows)/5, (file.view.width-helmCols)/2)
-		}
+		// 	// Draw dot.
+		// 	if !file.DotIsEmpty() {
+		// 		ui.cr.SetSourceRGB(0xee/255.0, 0xe8/255.0, 0xd5/255.0) // base02 - selection
+		// 		for _, s := range selections {
+		// 			var w int
+		// 			if s.line {
+		// 				w = winWidth
+		// 			} else {
+		// 				w = s.width*fontW
+		// 			}
+		// 			ui.cr.Rectangle(float64(s.col*fontW+margin), float64(s.row*skip), float64(w+margin), float64(skip))
+		// 			ui.cr.Fill()
+		// 		}
+		// 	}
 
-		t.AttrReset()
-		status := med.statusLine()
-		if med.mode == DialogMode {
-			med.displayDialog(t, file.view.height+2)
-		}
-		if med.mode == ErrorMode {
-			e := med.errors.Front().Value.(error)
-			t.MoveTo(file.view.height+2, 0)
-			theme["error"].Out(t)
-			t.Write([]byte(fmt.Sprintf("%v", e)))
-			t.AttrReset()
-		}
-		t.MoveTo(file.view.height, 0)
-		theme["status"].Out(t)
-		t.EraseEol()
-		t.Write([]byte(status))
-		t.Flush()
+		// 	// Draw cursor.
+		// 	ui.cr.SetSourceRGB(0x26/255.0, 0x8b/255.0, 0xd2/255.0) // blue - point
+		// 	cx, cy := margin+(col*fontW), row*skip
+		// 	ui.cr.Rectangle(float64(cx), float64(cy), 2.0, float64(skip))
+		// 	ui.cr.Fill()
 
-		n, _ := os.Stdin.Read(b)
-		if string(b[:n]) == kCtrl("q") {
-			return
-		}
-		// TODO debug
-		med.input = b[:n]
-		if med.mode == ErrorMode {
-			// Any key in ErrorMode will do.
-			med.popError()
-		} else {
-			cmdRight := func(med *Med, file *File) {
-				file.DotRight(false)
-			}
-			cmdRightExpand := func(med *Med, file *File) {
-				file.DotRight(true)
-			}
-			cmdLeft := func(med *Med, file *File) {
-				file.DotLeft()
-			}
-			cmdDown := func(med *Med, file *File) {
-				file.DotDown(false)
-			}
-			cmdDownExpand := func(med *Med, file *File) {
-				file.DotDown(true)
-			}
-			cmdUp := func(med *Med, file *File) {
-				file.DotUp()
-			}
-			cmdDeleteChar := func(med *Med, file *File) {
-				file.DeleteChar()
-			}
-			cmdBackspace := func(med *Med, file *File) {
-				file.Backspace()
-			}
-			cmdInsertNewline := func(med *Med, file *File) {
-				file.SelfInsert(NL)
-			}
-			cmdOpenBelow := func(med *Med, file *File) {
-				file.DotOpenBelow()
-			}
-			cmdOpenAbove := func(med *Med, file *File) {
-				file.DotOpenAbove()
-			}
-			cmdSearchForward := func(med *Med, file *File) {
-				searchForward(med, file)
-			}
-			cmdSearchBackward := func(med *Med, file *File) {
-				searchBackward(med, file)
-			}
-			cmdSaveFile := func(med *Med, file *File) {
-				saveFile(med, file)
-			}
-			cmdUndo := func(med *Med, file *File) {
-				file.Undo()
-			}
-			cmdRedo := func(med *Med, file *File) {
-				file.Redo()
-			}
-			cmdGotoSymbol := func(med *Med, file *File) {
-				goGotoSymbol(med, file)
-			}
-			// TODO debug
-			cmdTest := func(med *Med, file *File) {
-				file.dot.start = 10
-				file.dot.end = 60
-			}
-			// TODO implement properly
-			cmdComment := func(med *Med, file *File) {
-				oldStart := file.dot.start
-				start := lineStart(file.text, file.dot.start)
-				file.dot.start = start
-				end := file.dot.end
-				text := append([]byte(nil), file.text[start:end]...)
-				off := 0
-				for p := 0; p <= len(text); {
-					text = textInsert(text, p, []byte("// "))
-					p = lineEnd(text, p) + 1
-					off += len("// ")
-				}
-				file.DotDelete()
-				file.Insert(text)
-				file.UndoBlock()
-				file.dot.start = oldStart
-				file.dot.end = end + off
-			}
-			cmdQuote := func(med *Med, file *File) {
-				if file.DotIsEmpty() {
-					file.Insert([]byte(`"`))
-				} else {
-					file.DotWrap(`"`, `"`)
-				}
-			}
-			cmdPaste := func(med *Med, file *File) {
-				if med.clip == nil {
-					return
-				}
-				file.Paste(med.clip)
-			}
-			cmdSelectLine := func(med *Med, file *File) {
-				file.SelectLine()
-			}
-			keymap := []Keybind{
-				{kAlt("l"), cmdRight},
-				{kAlt("L"), cmdRightExpand},
-				{kAlt("j"), cmdLeft},
-				{kAlt("k"), cmdDown},
-				{kAlt("K"), cmdDownExpand},
-				{kAlt("i"), cmdUp},
-				{kDelete, cmdDeleteChar},
-				{kBackspace, cmdBackspace},
-				{kEnter, cmdInsertNewline},
-				{kPageDown, viewScrollPageDown},
-				{kPageUp, viewScrollPageUp},
-				{kDown, viewScrollDown},
-				{kUp, viewScrollUp},
-				{kAlt("z"), viewScrollAdjust},
-				{`"`, cmdQuote},
-				{kAlt("h"), cmdOpenBelow},
-				{kAlt("H"), cmdOpenAbove},
-				{kAlt("n"), cmdSearchForward},
-				{kAlt("N"), cmdSearchBackward},
-				{kAlt("o"), searchNextForward2},
-				{kAlt("u"), searchNextBackward2},
-				{kCtrl("x"), clipCut},
-				{kCtrl("c"), clipCopy},
-				{kCtrl("v"), cmdPaste},
-				{kCtrl("z"), cmdUndo},
-				{kCtrl("y"), cmdRedo},
-				{kAlt("s"), cmdGotoSymbol},
-				{kAlt("m")+"l", cmdSelectLine},
-				{kCtrl("s"), cmdSaveFile},
-				{kAlt("t"), cmdTest},
-				{kAlt("/"), cmdComment},
-			}
-			if med.mode == DialogMode {
-				keymap = dialogModeKeymap
-			}
+		// 	// Draw text.
+		// 	ui.cr.SetSourceRGB(0x58/255.0, 0x6e/255.0, 0x75/255.0)
+		// 	for _, line := range lines {
+		// 		if len(line) == 0 {
+		// 			y += skip
+		// 			continue
+		// 		}
+		// 		ui.DrawText(float64(margin), float64(y), string(line))
+		// 		y += skip
+		// 	}
+		// }
 
-			med.keyseq += string(b[:n])
-			//match, v := resolveKeys(editorKeymaps[med.mode], med.keyseq)
-			match, v := resolveKeys(keymap, med.keyseq)
-			switch match {
-			case Match:
-				command := v.(func(*Med, *File))
-				f := file
-				if med.mode == DialogMode {
-					f = med.dialog.file
-				}
-				command(&med, f)
-				med.keyseq = ""
-			case PartialMatch:
-				break // Nothing, for now.
-			case NoMatch:
-				if med.mode == DialogMode {
-					med.dialog.file.SelfInsert(b[:n])
-					if med.dialog.helm != nil {
-						med.dialog.update()
-					}
-				} else {
-					file.SelfInsert(b[:n])
-				}
-				med.keyseq = ""
-			}
-		}
+		//
+		// err = renderer.SetDrawColor(0xfd, 0xf6, 0xe3, 255)
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+		// renderer.Clear()
+		//
+		// lines, selections, row, col := file.PreRender()
+		//
+		// // Draw dot.
+		// if !file.DotIsEmpty() {
+		// 	err = renderer.SetDrawColor(0xee, 0xe8, 0xd5, 255) // base02 - selection
+		// 	if err != nil {
+		// 		log.Fatal(err)
+		// 	}
+		// 	for _, s := range selections {
+		// 		var w int
+		// 		if s.line {
+		// 			w = winWidth
+		// 		} else {
+		// 			w = s.width*fontW
+		// 		}
+		// 		err = renderer.FillRect(&sdl.Rect{int32(s.col*fontW)+margin, int32(s.row*skip),
+		// 			int32(w)+margin, int32(skip)})
+		// 		if err != nil {
+		// 			log.Fatal(err)
+		// 		}
+		// 	}
+		// }
+		// err = renderer.SetDrawColor(0x26, 0x8b, 0xd2, 255) // blue - point
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+		// cx, cy := margin+int32(col * fontW), int32(row * skip)
+		// err = renderer.DrawLine(cx, cy, cx, cy+int32(skip))
+		// err = renderer.DrawLine(cx+1, cy, cx+1, cy+int32(skip))
+		//
+		// // Draw text.
+		//
+		// for _, line := range lines {
+		// 	if len(line) == 0 {
+		// 		y += int32(skip)
+		// 		continue
+		// 	}
+		// 	text, err := font.RenderUTF8Blended(string(line), sdl.Color{0x58, 0x6e, 0x75, 255})
+		// 	if err != nil {
+		// 		log.Fatal(err)
+		// 	}
+		// 	tx, err := renderer.CreateTextureFromSurface(text)
+		// 	if err != nil {
+		// 		log.Fatal(err)
+		// 	}
+		// 	renderer.Copy(tx, nil, &sdl.Rect{margin, y, text.W, text.H})
+		// 	tx.Destroy()
+		// 	text.Free()
+		// 	y += int32(skip)
+		// }
+		//
+		// renderer.Present()
+		// //win.UpdateSurface()
+		//
+		// ev := sdl.WaitEvent()
+		// switch t := ev.(type) {
+		// case *sdl.QuitEvent:
+		// 	run = false
+		// case *sdl.KeyboardEvent:
+		// 	if t.State == 1 { // pressed
+		// 		switch t.Keysym.Sym {
+		// 		case sdl.K_RIGHT:
+		// 			file.DotRight(false)
+		// 		case sdl.K_LEFT:
+		// 			file.DotLeft()
+		// 		case sdl.K_DOWN:
+		// 			file.DotDown(false)
+		// 		case sdl.K_UP:
+		// 			file.DotUp()
+		// 		case sdl.K_RETURN:
+		// 			file.Insert(NL)
+		// 		default:
+		// 			kc := sdl.GetKeyFromScancode(t.Keysym.Scancode)
+		// 			file.Insert([]byte(fmt.Sprintf("%v", sdl.GetKeyName(kc))))
+		// 		}
+		// 	}
+		// 	fmt.Printf("[%d ms] Keyboard\ttype:%d\tsym:%c\tmodifiers:%d\tstate:%d\trepeat:%d\n",
+		// 		t.Timestamp, t.Type, t.Keysym.Sym, t.Keysym.Mod, t.State, t.Repeat)
+		// case *sdl.MouseButtonEvent:
+		// 	if t.State == 1 && t.Button == 1 {
+		// 		holdingMouse1 = true
+		// 		row := int(t.Y/int32(skip))
+		// 		col := int(t.X/int32(fontW))
+		// 		file.DotSet(file.RowColToPosition(row, col))
+		// 	} else if holdingMouse1 && t.State == 1 && t.Button == 2 {
+		// 		med.clip = file.ClipCut()
+		// 	} else if holdingMouse1 && t.State == 1 && t.Button == 3 {
+		// 		file.Paste(med.clip)
+		// 	} else if t.State == 0 && t.Button == 1 {
+		// 		holdingMouse1 = false
+		// 	}
+		// 	// fmt.Printf("[%d ms] MouseButton\ttype:%d\tid:%d\tx:%d\ty:%d\tbutton:%d\tstate:%d\n",
+		// 	// 	t.Timestamp, t.Type, t.Which, t.X, t.Y, t.Button, t.State)
+		//
+		// case *sdl.MouseMotionEvent:
+		// 	if holdingMouse1 {
+		// 		row := int(t.Y/int32(skip))
+		// 		col := int(t.X/int32(fontW))
+		// 		file.dot.end = file.RowColToPosition(row, col)
+		// 		//file.SetDotPosition(row, col)
+		// 	}
+		// case *sdl.MouseWheelEvent:
+		// 	if t.Y > 0 {
+		// 		for i := 0; i < 3; i++ {
+		// 			file.view.ScrollUp(file.text)
+		// 		}
+		// 	} else {
+		// 		for i := 0; i < 3; i++ {
+		// 			file.view.ScrollDown(file.text)
+		// 		}
+		// 	}
+		// 	// fmt.Printf("[%d ms] MouseWheel\ttype:%d\tid:%d\tx:%d\ty:%d\n",
+		// 	// 	t.Timestamp, t.Type, t.Which, t.X, t.Y)
+		// }
 	}
 }
